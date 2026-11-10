@@ -29,20 +29,30 @@ struct RexStreamParser {
     mutating func feed(_ bytes: [UInt8], emit: (ArraySlice<UInt8>) -> Void) {
         pending.append(contentsOf: bytes)
         var plain: [UInt8] = []
-        while true {
-            guard let start = Self.find(header, in: pending) else { break }
-            guard let end = Self.findTerminator(in: pending, from: start + header.count) else { break }
-            if start > 0 { plain.append(contentsOf: pending[0..<start]) }
-            let body = Array(pending[(start + header.count)..<end])
+        while !pending.isEmpty {
+            guard let start = Self.find(header, in: pending) else {
+                // No complete header in the buffer: everything can go out except
+                // a tail that is still turning into `ESC _ rex1;<nonce>;`. The
+                // hold-back has to cover the whole header, otherwise a half
+                // arrived directive gets printed as text.
+                let partial = Self.hasPartialSuffix(header, in: pending) ?? 0
+                let cut = pending.count - partial
+                if cut > 0 {
+                    plain.append(contentsOf: pending[0..<cut])
+                    pending.removeFirst(cut)
+                }
+                break
+            }
+            if start > 0 {
+                plain.append(contentsOf: pending[0..<start])
+                pending.removeFirst(start)
+            }
+            // The header is there but the terminator has not arrived: keep the
+            // whole directive buffered instead of emitting its first byte.
+            guard let end = Self.findTerminator(in: pending, from: header.count) else { break }
+            let body = Array(pending[header.count..<end])
             if let directive = Self.decode(body) { directives.append(directive) }
             pending.removeFirst(end + 2)
-        }
-        // Hold back a trailing fragment that may open the next directive.
-        let holdBack = min(pending.count, header.count)
-        let cut = Self.safeEmitCount(pending, holdBack: holdBack)
-        if cut > 0 {
-            plain.append(contentsOf: pending[0..<cut])
-            pending.removeFirst(cut)
         }
         if !plain.isEmpty { emit(plain[...]) }
     }
@@ -85,24 +95,6 @@ struct RexStreamParser {
             index += 1
         }
         return nil
-    }
-
-    /// How many buffered bytes are certainly not the start of a directive.
-    private static func safeEmitCount(_ bytes: [UInt8], holdBack: Int) -> Int {
-        guard bytes.count > holdBack else { return 0 }
-        let limit = bytes.count - holdBack
-        var index = limit
-        while index < bytes.count {
-            let length = bytes.count - index
-            var matches = true
-            for offset in 0..<length where bytes[index + offset] != markerPrefix[offset] {
-                matches = false
-                break
-            }
-            if matches { return index }
-            index += 1
-        }
-        return limit
     }
 
     private static func decode(_ body: [UInt8]) -> Directive? {

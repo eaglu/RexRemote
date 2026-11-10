@@ -8,6 +8,31 @@ final class RexRemoteUITests: XCTestCase {
 
     /// Launches the app pointed at the test server, passing Cloudflare Access
     /// service-token credentials when the tunnel test asks for them.
+    /// Diagnostic: opens whatever session the server has and captures the pane
+    /// before and after typing, so the render can be compared with the pty.
+    /// Only runs when REX_TEST_ANY_SESSION=1, because it mutates that session.
+    func testFirstSessionShowsPrompt() throws {
+        guard ProcessInfo.processInfo.environment["REX_TEST_ANY_SESSION"] == "1" else {
+            throw XCTSkip("set REX_TEST_ANY_SESSION=1 to run against a live session")
+        }
+        let app = launchedApp()
+        app.buttons["connectButton"].tap()
+        let row = app.buttons.matching(identifier: "sessionRow").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 25), "no session row")
+        row.tap()
+
+        Thread.sleep(forTimeInterval: 4.0)
+        snapshot("diag-after-open")
+        Thread.sleep(forTimeInterval: 1.0)
+        snapshot("diag-before-typing")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.42)).tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        app.typeText("echo probe-$((2+3))")
+        Thread.sleep(forTimeInterval: 2.5)
+        snapshot("diag-after-typing")
+    }
+
     private func launchedApp() -> XCUIApplication {
         let app = XCUIApplication()
         var arguments = ["-rexHost", serverAddress]

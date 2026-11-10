@@ -201,7 +201,9 @@ final class TerminalController: NSObject, ObservableObject {
             if opcode == 0x81, bytes.count >= 32 {
                 gotWelcome = true
                 reconnectToken = Data(bytes[1..<17])
-                let nonce = Self.uint64(bytes, at: 21)
+                // WELCOME layout: 0x81, 16-byte token, 3 zero bytes,
+                // u32 resume window, then the u64 channel nonce at offset 24.
+                let nonce = Self.uint64(bytes, at: 24)
                 parser = RexStreamParser(nonce: String(nonce))
                 phase = .live
             } else if opcode == 0x82 {
