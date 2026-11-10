@@ -86,9 +86,9 @@ struct SessionScreen: View {
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(RexTheme.ink)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 44, height: 44)
                     .glassEffect(RexTheme.glass(interactive: true), in: .circle)
             }
             .buttonStyle(.plain)
@@ -97,16 +97,16 @@ struct SessionScreen: View {
             Spacer(minLength: 0)
 
             Text(view?.label ?? session.label)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(RexTheme.ink)
                 .lineLimit(1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
                 .glassEffect(RexTheme.glass(), in: .capsule)
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 2) {
+            HStack(spacing: 0) {
                 Button {
                     Task { await store.newWindow() }
                 } label: {
@@ -149,9 +149,9 @@ struct SessionScreen: View {
 
     private func glyph(_ name: String) -> some View {
         Image(systemName: name)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 17, weight: .medium))
             .foregroundStyle(RexTheme.ink)
-            .frame(width: 30, height: 26)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
 
@@ -175,9 +175,9 @@ struct SessionScreen: View {
                     Task { await store.newWindow() }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(RexTheme.ink)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .glassEffect(RexTheme.glass(interactive: true), in: .circle)
                 }
                 .buttonStyle(.plain)
@@ -196,20 +196,20 @@ struct SessionScreen: View {
                 Task { await store.focus(blockID: blockID) }
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Text(">_")
-                    .font(RexTheme.mono(11, weight: .bold))
+                    .font(RexTheme.mono(13, weight: .bold))
                     .foregroundStyle(isActive ? RexTheme.mint : RexTheme.secondaryInk.opacity(0.7))
                 Text(candidate.label)
-                    .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                    .font(.system(size: 14, weight: isActive ? .semibold : .regular))
                     .foregroundStyle(isActive ? RexTheme.chipInk : RexTheme.secondaryInk)
                     .lineLimit(1)
                 Text("\(candidate.panes.count)")
-                    .font(RexTheme.mono(10))
+                    .font(RexTheme.mono(11))
                     .foregroundStyle(isActive ? RexTheme.chipInk.opacity(0.6) : RexTheme.secondaryInk.opacity(0.7))
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 9)
             .glassEffect(
                 isActive
                     ? RexTheme.glass(RexTheme.chipGlass.opacity(0.92), interactive: true)
@@ -309,9 +309,9 @@ struct SessionScreen: View {
                     showKeys.toggle()
                 } label: {
                     Image(systemName: showKeys ? "keyboard.chevron.compact.down" : "keyboard")
-                        .font(.system(size: 15))
+                        .font(.system(size: 17))
                         .foregroundStyle(RexTheme.secondaryInk)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("toggleKeysButton")
@@ -320,22 +320,22 @@ struct SessionScreen: View {
                     focusedPane.map { "Type to \($0.block.label)…" } ?? "No pane focused",
                     text: $composeText
                 )
-                .font(RexTheme.mono(12))
+                .font(RexTheme.mono(13))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.send)
                 .onSubmit { sendCompose() }
                 .disabled(focusedBlockID == nil)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 11)
                 .glassEffect(RexTheme.glass(), in: .capsule)
                 .accessibilityIdentifier("composeField")
 
                 Button(action: sendCompose) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(canSend ? RexTheme.mint : RexTheme.chipInk.opacity(0.4))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .glassEffect(
                             canSend
                                 ? RexTheme.glass(RexTheme.chipGlass.opacity(0.95), interactive: true)
@@ -449,26 +449,28 @@ struct PaneContent: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Text(">_")
-                .font(RexTheme.mono(10, weight: .bold))
+                .font(RexTheme.mono(12, weight: .bold))
                 .foregroundStyle(isFocused ? RexTheme.mintDeep : RexTheme.secondaryInk.opacity(0.55))
             Text(placement.block.label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(isFocused ? RexTheme.ink : RexTheme.secondaryInk)
                 .lineLimit(1)
+                .layoutPriority(1)
             Text(controller.terminalTitle.isEmpty ? "~" : controller.terminalTitle)
-                .font(RexTheme.mono(10))
+                .font(RexTheme.mono(11))
                 .foregroundStyle(RexTheme.secondaryInk.opacity(0.8))
                 .lineLimit(1)
-            Spacer(minLength: 4)
+                .layoutPriority(0.5)
+            Spacer(minLength: 2)
             Button {
                 Task { await store.focus(blockID: placement.block.id) }
             } label: {
                 Image(systemName: "scope")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 26, height: 30)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("focusPaneButton")
@@ -476,9 +478,9 @@ struct PaneContent: View {
                 store.toggleZoom(blockID: placement.block.id)
             } label: {
                 Image(systemName: isZoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 26, height: 30)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("zoomPaneButton")
@@ -495,14 +497,14 @@ struct PaneContent: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 26, height: 30)
             }
             .accessibilityIdentifier("paneMenuButton")
         }
-        .padding(.horizontal, 8)
-        .frame(height: 24)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
         .background(RexTheme.card)
         .overlay(alignment: .bottom) {
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8)

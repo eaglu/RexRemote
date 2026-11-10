@@ -53,10 +53,10 @@ struct KeyBar: View {
                         send(key)
                     } label: {
                         Text(key.label)
-                            .font(RexTheme.mono(12, weight: .medium))
-                            .frame(minWidth: 34)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 6)
+                            .font(RexTheme.mono(13.5, weight: .medium))
+                            .frame(minWidth: 40, minHeight: 38)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
                             .foregroundStyle(RexTheme.ink)
                             .glassEffect(RexTheme.glass(interactive: true), in: .capsule)
                     }
