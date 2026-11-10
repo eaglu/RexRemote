@@ -81,6 +81,39 @@ rex server run --listen unix:///tmp/rextest/server.sock \
 Then enter `<mac-ip>:7297` in the app. Sessions created on the Mac appear in the list; the "Now" card at the top
 shows the current window's panes.
 
+## Remote access from anywhere
+
+Rex's TCP listeners have **no password**: `rex server run` only offers `--allow-anonymous`, so a port opened to the
+internet is a shell for whoever finds it. Put an authenticating proxy in front instead. A Cloudflare Tunnel keeps
+rex on loopback and lets Cloudflare Access hold the door:
+
+```sh
+# 1. rex stays local; the tunnel is the only way in
+rex server run --extra-listen http://127.0.0.1:7298 --allow-anonymous
+
+# 2. once the Access application exists for the hostname
+cloudflared tunnel --config ~/.cloudflared/config-rex.yml run rex
+```
+
+```yaml
+# ~/.cloudflared/config-rex.yml
+tunnel: <tunnel-uuid>
+credentials-file: /Users/<you>/.cloudflared/<tunnel-uuid>.json
+protocol: http2
+ingress:
+  - hostname: rex.example.com
+    service: http://127.0.0.1:7298
+  - service: http_status:404
+```
+
+Create a **self-hosted** Access application for that hostname with a *Service Auth* policy (no browser login),
+make a Service Token, and paste its Client ID/Secret into the app's **Cloudflare Access** section. The app sends
+`CF-Access-Client-Id` / `CF-Access-Client-Secret` on every WebSocket handshake, and pings the control socket
+every 45s so Cloudflare does not drop the idle connection.
+
+Bare public hostnames default to `https`/`wss`; anything with an explicit port, `localhost`, `*.local`, or a bare
+IP stays on `http`.
+
 ## Test
 
 ```sh

@@ -1,12 +1,14 @@
 import Foundation
-import Network
 
-/// A minimal RFC 6455 client on top of Network.framework.
+/// A minimal RFC 6455 client on top of `URLSessionWebSocketTask`.
 ///
-/// Network.framework owns the framing (fragmentation, ping/pong, close codes);
-/// this class owns the connection lifecycle and marshals messages to the main
-/// actor so callers can stay UI-shaped.
-final class WebSocketConnection {
+/// Network.framework's WebSocket protocol never completes the upgrade when a
+/// system HTTP proxy or Cloudflare Access sits in the path (the socket sticks in
+/// `in_progress`, so `hello` is never sent and the server closes the connection
+/// after its five second grace). `URLSessionWebSocketTask` handles those hops,
+/// honours custom handshake headers, and still hands us the negotiated
+/// subprotocol and close codes.
+final class WebSocketConnection: NSObject {
     enum Message {
         case text(Data)
         case binary(Data)
@@ -21,8 +23,8 @@ final class WebSocketConnection {
     /// Called on the main queue for a transient problem (the connection may recover).
     var onProblem: ((String) -> Void)?
 
-    private let queue = DispatchQueue(label: "com.faye.RexRemote.ws")
-    private var connection: NWConnection?
+    private var session: URLSession?
+    private var task: URLSessionWebSocketTask?
     private var reported = false
     private var open = false
 
@@ -30,109 +32,71 @@ final class WebSocketConnection {
     private(set) var selectedSubprotocol: String?
 
     func connect(url: URL, subprotocols: [String], headers: [(name: String, value: String)]) {
-        let tcp = NWProtocolTCP.Options()
-        tcp.noDelay = true
-        let tls = NWProtocolTLS.Options()
-        let parameters: NWParameters
-        switch url.scheme?.lowercased() {
-        case "wss", "https":
-            parameters = NWParameters(tls: tls, tcp: tcp)
-        default:
-            parameters = NWParameters(tls: nil, tcp: tcp)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        for header in headers {
+            request.setValue(header.value, forHTTPHeaderField: header.name)
+        }
+        if let first = subprotocols.first {
+            request.setValue(first, forHTTPHeaderField: "Sec-WebSocket-Protocol")
         }
 
-        let options = NWProtocolWebSocket.Options()
-        options.autoReplyPing = true
-        options.maximumMessageSize = 8 * 1024 * 1024
-        if !subprotocols.isEmpty { options.setSubprotocols(subprotocols) }
-        if !headers.isEmpty {
-            options.setAdditionalHeaders(headers.map { (name: $0.name, value: $0.value) })
-        }
-        parameters.defaultProtocolStack.applicationProtocols.insert(options, at: 0)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        self.session = session
 
-        let connection = NWConnection(to: .url(url), using: parameters)
-        self.connection = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.open = true
-                self.selectedSubprotocol = self.websocketMetadata()?.selectedSubprotocol
-                self.onOpenOnMain()
-            case .waiting(let error):
-                self.onProblemOnMain(Self.describe(error))
-            case .failed(let error):
-                self.finish(Self.describe(error))
-            case .cancelled:
-                self.finish(nil)
-            default:
-                break
-            }
-        }
-        connection.start(queue: queue)
+        let task = session.webSocketTask(with: request)
+        task.maximumMessageSize = 8 * 1024 * 1024
+        self.task = task
+        task.resume()
+        receiveLoop()
     }
 
     func send(text: String) {
-        send(data: Data(text.utf8), opcode: .text)
+        send(.string(text))
     }
 
     func send(binary: Data) {
-        send(data: binary, opcode: .binary)
+        send(.data(binary))
     }
 
     func close(andReport reason: String? = nil) {
-        guard let connection else {
-            finish(reason)
-            return
-        }
-        let metadata = NWProtocolWebSocket.Metadata(opcode: .close)
-        metadata.closeCode = .protocolCode(.normalClosure)
-        let context = NWConnection.ContentContext(identifier: "close", metadata: [metadata])
-        connection.send(content: nil, contentContext: context, isComplete: true, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
         finish(reason)
     }
 
     // MARK: - Internals
 
-    private func send(data: Data, opcode: NWProtocolWebSocket.Opcode) {
-        guard let connection, open else { return }
-        let metadata = NWProtocolWebSocket.Metadata(opcode: opcode)
-        let context = NWConnection.ContentContext(identifier: "ws-message", metadata: [metadata])
-        connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { [weak self] error in
+    private func send(_ message: URLSessionWebSocketTask.Message) {
+        guard let task else {
+            finish("connection closed")
+            return
+        }
+        task.send(message) { [weak self] error in
             guard let error else { return }
-            self?.finish(Self.describe(error))
-        })
-    }
-
-    private func websocketMetadata() -> NWProtocolWebSocket.Metadata? {
-        connection?.metadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
+            self?.finish(error.localizedDescription)
+        }
     }
 
     private func receiveLoop() {
-        guard let connection else { return }
-        connection.receiveMessage { [weak self] data, context, _, error in
+        guard let task else { return }
+        task.receive { [weak self] result in
             guard let self else { return }
-            if let error {
-                self.finish(Self.describe(error))
-                return
+            switch result {
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    self.post { $0.onMessage?(.text(Data(text.utf8))) }
+                case .data(let data):
+                    self.post { $0.onMessage?(.binary(data)) }
+                @unknown default:
+                    break
+                }
+                self.receiveLoop()
+            case .failure(let error):
+                self.finish(error.localizedDescription)
             }
-            let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
-            switch metadata?.opcode {
-            case .text:
-                if let data { self.post { $0.onMessage?(.text(data)) } }
-            case .binary:
-                if let data { self.post { $0.onMessage?(.binary(data)) } }
-            case .close:
-                var reason: String?
-                if case .protocolCode(let code)? = metadata?.closeCode { reason = "closed (\(code))" }
-                self.finish(reason)
-                return
-            default:
-                break
-            }
-            self.receiveLoop()
         }
     }
 
@@ -140,10 +104,12 @@ final class WebSocketConnection {
         guard !reported else { return }
         reported = true
         open = false
-        let connection = self.connection
-        self.connection = nil
-        connection?.stateUpdateHandler = nil
-        connection?.cancel()
+        let session = self.session
+        let task = self.task
+        self.session = nil
+        self.task = nil
+        task?.cancel(with: .normalClosure, reason: nil)
+        session?.invalidateAndCancel()
         post { $0.onClose?(reason) }
     }
 
@@ -153,24 +119,33 @@ final class WebSocketConnection {
             body(self)
         }
     }
+}
 
-    private func onOpenOnMain() {
-        post { connection in
-            connection.onOpen?()
-            connection.receiveLoop()
+extension WebSocketConnection: URLSessionWebSocketDelegate {
+    func urlSession(_ session: URLSession,
+                    webSocketTask: URLSessionWebSocketTask,
+                    didOpenWithProtocol protocol: String?) {
+        selectedSubprotocol = `protocol`
+        open = true
+        post { $0.onOpen?() }
+    }
+
+    func urlSession(_ session: URLSession,
+                    webSocketTask: URLSessionWebSocketTask,
+                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+                    reason: Data?) {
+        let text = reason.flatMap { String(data: $0, encoding: .utf8) }
+        switch (text?.isEmpty ?? true, closeCode.rawValue) {
+        case (true, 1000):
+            finish(nil)
+        case (true, let code):
+            finish("closed (\(code))")
+        case (false, let code):
+            finish("closed (\(code)): \(text ?? "")")
         }
     }
 
-    private func onProblemOnMain(_ message: String) {
-        post { $0.onProblem?(message) }
-    }
-
-    private static func describe(_ error: NWError) -> String {
-        switch error {
-        case .posix(let code): return "network error: \(code)"
-        case .dns(let code): return "dns error: \(code)"
-        case .tls(let status): return "tls error: \(status)"
-        @unknown default: return "network error"
-        }
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        finish(error?.localizedDescription)
     }
 }

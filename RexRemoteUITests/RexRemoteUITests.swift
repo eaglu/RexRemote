@@ -3,15 +3,28 @@ import XCTest
 /// End-to-end checks against a live Rex server on 127.0.0.1:7297.
 final class RexRemoteUITests: XCTestCase {
     private let serverAddress = ProcessInfo.processInfo.environment["REX_TEST_SERVER"] ?? "127.0.0.1:7297"
+    private let accessID = ProcessInfo.processInfo.environment["REX_TEST_ACCESS_ID"]
+    private let accessSecret = ProcessInfo.processInfo.environment["REX_TEST_ACCESS_SECRET"]
+
+    /// Launches the app pointed at the test server, passing Cloudflare Access
+    /// service-token credentials when the tunnel test asks for them.
+    private func launchedApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        var arguments = ["-rexHost", serverAddress]
+        if let accessID, let accessSecret {
+            arguments += ["-rexAccessID", accessID, "-rexAccessSecret", accessSecret]
+        }
+        app.launchArguments = arguments
+        app.launch()
+        return app
+    }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     func testConnectOpenSessionAndTypeIntoTerminal() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-rexHost", serverAddress]
-        app.launch()
+        let app = launchedApp()
 
         // 1. Connect screen.
         let serverField = app.textFields["serverAddressField"]
@@ -128,9 +141,7 @@ final class RexRemoteUITests: XCTestCase {
     /// The pairing sheet has to work on hardware without a camera too, so the
     /// pasted-address path is what CI and the simulator exercise.
     func testPairingSheetAcceptsPastedAddress() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-rexHost", serverAddress]
-        app.launch()
+        let app = launchedApp()
 
         let scan = app.buttons["scanButton"]
         XCTAssertTrue(scan.waitForExistence(timeout: 20), "scan button missing")

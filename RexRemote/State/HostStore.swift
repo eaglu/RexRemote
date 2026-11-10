@@ -147,7 +147,10 @@ final class HostStore: ObservableObject {
 
     private func load() {
         if let override = Self.launchHostOverride() {
-            hosts = [HostConfig(name: "This Mac", address: override)]
+            var seeded = HostConfig(name: "This Mac", address: override)
+            seeded.accessClientID = Self.launchArgument("-rexAccessID")
+            seeded.accessClientSecret = Self.launchArgument("-rexAccessSecret")
+            hosts = [seeded]
             selectedID = hosts.first?.id
             save()
             return
@@ -168,8 +171,12 @@ final class HostStore: ObservableObject {
 
     /// `-rexHost 127.0.0.1:7297` pins the server, which UI tests rely on.
     private static func launchHostOverride() -> String? {
+        launchArgument("-rexHost")
+    }
+
+    private static func launchArgument(_ flag: String) -> String? {
         let args = ProcessInfo.processInfo.arguments
-        guard let index = args.firstIndex(of: "-rexHost"), index + 1 < args.count else { return nil }
+        guard let index = args.firstIndex(of: flag), index + 1 < args.count else { return nil }
         return args[index + 1]
     }
 
