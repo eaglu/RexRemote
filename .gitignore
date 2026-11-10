@@ -1,0 +1,25 @@
+# Xcode
+build/
+build-device/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Generated project (regenerate with `xcodegen generate`)
+RexRemote.xcodeproj/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# Artefacts
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.zip
+
+# macOS
+.DS_Store

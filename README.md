@@ -1,0 +1,151 @@
+# Rex Remote
+
+An iOS client for a [Rex](https://www.superlogical.com/rex/docs/automate/server-api) server: connect to a Mac over the
+Rex Server API, browse sessions and windows, and drive the panes from the phone.
+
+![Sessions](shots/02-sessions.png)
+
+## What it does
+
+- **Hosts** — remembers several servers (`host:port`, optional Bearer token), defaults to `127.0.0.1:7297`.
+- **Sessions** — `session.bootstrap` gives the session list plus the active window's layout in one round trip.
+- **Windows** — tab chips per window with pane counts, live `session_view_changed` updates, new window from the
+  toolbar; long-press a chip to rename or close that window. The phone follows the server whenever another client
+  changes the active window.
+- **Panes** — the layout tree's fractional rects are rendered positionally, so tiled splits look like the Mac's.
+  Focus ring follows `session.focus_block`; per-pane menu splits right/down, closes, and toggles a local zoom.
+- **Terminal** — each pane owns a `data.connect` ticket, a `rex.data.terminal.v1` socket, and a libghostty-vt
+  terminal (`GhosttySession`). A `terminal.format` `vt` dump primes the screen, then live bytes stream in (Ghostty
+  snapshot skipped, APC `resize`/`theme` directives applied). Frames are drawn by our own Core Text renderer
+  (`GhosttyGridView`), and `terminal.write` carries typed input, including keys encoded by libghostty itself.
+- **Fit to phone** — with "Resize shells to fit this device" on, the app takes block ownership
+  (`session.own_block`) and sends `com.superlogical.terminal.resize` so the pty reflows to the pane.
+- **Input** — compose field (sends a line), key row (esc, tab, ^C, ^D, ^Z, ^L, arrows, `| ~ / -`).
+- **Zoom** — the pane menu's zoom expands one pane to the whole canvas without touching the Mac's layout.
+- **Rex design, light only** — warm paper, warm white cards, a charcoal chip for the active window, one mint accent,
+  and Liquid Glass chrome (top bar, window tabs, input dock) floating above the paper. Light is forced at two levels
+  (SwiftUI colour scheme and `UIUserInterfaceStyle`) so no screen can fall back to a dark skin.
+
+## Layout of the code
+
+```
+RexRemote/RexRemote/
+  App/RexRemoteApp.swift        entry point
+  Support/WebSocketConnection.swift  Network.framework RFC 6455 client (subprotocol + headers)
+  Support/JSON.swift            JSONObject helpers, base64url
+  Rex/RexClient.swift           rex.control.v1: hello/welcome, request/response, seq dedupe, reconnect token
+  Rex/RexStreamParser.swift     strips `ESC _ rex1;<nonce>;<json> ESC \` directives out of the byte stream
+  Rex/RexModels.swift           session view + layout tree → positioned panes
+  State/HostStore.swift         persisted hosts
+  State/AppStore.swift          session list, attachments, view refresh, block methods
+  Terminal/TerminalController.swift  one block's stream: ticket → prime → live, resize, input
+  Views/…                       SwiftUI screens
+RexRemote/RexRemoteUITests/     end-to-end test against a live server
+```
+
+## Build
+
+```sh
+brew install xcodegen          # project.yml → RexRemote.xcodeproj
+cd RexRemote && xcodegen generate
+open RexRemote.xcodeproj       # or:
+xcodebuild -project RexRemote.xcodeproj -scheme RexRemote \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+  -skipPackagePluginValidation build
+```
+
+`-skipPackagePluginValidation` is needed because the pinned dependencies ship build-tool plugins that Xcode would
+otherwise ask you to trust interactively.
+
+Requires iOS 18+, Xcode 26+ (Swift 6 toolchain, Swift 5 language mode).
+
+## Run against a server
+
+The Mac's default server listens on a unix socket (`~/Library/Application Support/rex/server.sock`), which the phone
+cannot reach. Expose it over TCP:
+
+```sh
+rex server run --extra-listen http://0.0.0.0:7297 --allow-anonymous
+```
+
+For a throwaway sandbox (what the UI test uses):
+
+```sh
+rex server run --listen unix:///tmp/rextest/server.sock \
+  --extra-listen http://127.0.0.1:7297 --allow-anonymous \
+  --state-dir /tmp/rextest/state
+```
+
+Then enter `<mac-ip>:7297` in the app. Sessions created on the Mac appear in the list; the "Now" card at the top
+shows the current window's panes.
+
+## Test
+
+```sh
+cd RexRemote
+xcodebuild -project RexRemote.xcodeproj -scheme RexRemote \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+  -skipPackagePluginValidation test
+```
+
+`RexRemoteUITests` launches the app with `-rexHost 127.0.0.1:7297` (override with `REX_TEST_SERVER`), connects, opens
+the demo session, types `echo UI-TEST-$((6*7))` into the compose field (asserting the field kept every keystroke), taps
+a key from the key row, then creates a window, splits it, zooms a pane, types again, and closes the window through the
+tab's context menu — so the server is left exactly as it was found. Screenshots go to the runner's Documents
+directory.
+
+## Design notes
+
+**Colour.** `RexTheme` carries the whole palette: paper `#FBF9F1`, card `#FFFEFA`, strip `#F1EDE2`, ink `#2F2A24`,
+secondary ink `#797066`, hairline `#E6E3DA`, the charcoal chip `#292B2F` for the active window, mint `#88E987` for
+the `>_` glyph, terminal fallbacks `#FAF8F3` / `#38342E` plus a One Light 16-colour palette. The Mac's theme travels
+in the byte stream; panes take it when it arrives and only its `resize` hints are acted on.
+
+**Liquid Glass.** Rex on the Mac floats a capsule of tabs and a cluster of glyph buttons above the terminal, and keeps
+everything the text sits on opaque. That hierarchy is what the app copies, using the iOS 26 APIs:
+
+| Rex on the Mac | Here |
+|---|---|
+| capsule holding the window tabs | one glass pill per tab inside a `GlassEffectContainer`, the active tab a dark tinted glass pill that morphs on switch (`glassEffectID`) |
+| the tab capsule's trailing `+` | round glass button next to the strip |
+| window glyphs in a rounded strip | back, session label, and the three action glyphs as three glass islands |
+| floating chrome over content | top bar, tab strip, and input dock are glass; panes, session rows, and every terminal canvas stay solid |
+| one loud accent (`>_` glyph) | mint is the only accent colour; glass tints are charcoal or clear, never a second hue |
+
+The rules of thumb: glass only where something floats, never under text, and tint with the same charcoal the Mac
+uses rather than a second brand colour. The page itself stays a flat warm paper: an earlier version put two soft
+radial washes behind the chrome so the glass would have something to refract, but at usable opacities the effect was
+invisible (iOS 26 glass adapts to its surroundings on its own) and only muddied the paper, so it was removed.
+
+**Renderer.** Two things bite when drawing a terminal with Core Text in a UIView: `CTLineDraw` paints with the
+*context's* fill colour (not the attributed string's), and UIKit's context is y-down while Core Text is y-up, so
+`context.textMatrix` has to be flipped or every glyph is mirrored below its baseline and clipped away. The baseline
+itself is derived from the font (`(cellHeight - lineHeight) / 2 + ascender`) rather than from the descender. On the
+core side, the row iterator must be re-fetched from the render state after each `ghostty_render_state_update`, and
+the palette has to be set before the first byte or the dump is resolved against libghostty's white-on-black default.
+
+**App icon.** `RexRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png` is the official Rex mark (rainbow field, cream
+dino, `BETA` pill), taken from `Rex Beta.app/Contents/Resources/App Icon Beta.icns` and upscaled 256 → 1024. No
+larger or pill-free original exists — the web set (`rex-icon.png`, `apple-touch-icon`, `favicon`) is also 256 px and the
+pill is baked into the artwork — so the icon keeps it verbatim rather than inventing a redrawn mascot. Candidates
+that were explored live in `Design/` (`icon-official-web.png`, `icon-official-mac.png`, `dino-*.png` drafts,
+`icon-candidates.png` contact sheet).
+
+## Screens
+
+| | |
+|---|---|
+| ![Connect](shots/01-connect.png) | ![Sessions](shots/02-sessions.png) |
+| ![Split window](shots/03-session.png) | ![Typed input](shots/04-after-input.png) |
+| ![New window](shots/06-new-window.png) | ![Split from the phone](shots/07-split-right.png) |
+| ![Zoomed pane](shots/09-zoom-input.png) | ![Window closed again](shots/10-window-closed.png) |
+
+## Notes and limits
+
+- Control and data sockets are reopened per pane; resume uses the 16-byte reconnect token carried by the data
+  protocol's 32-byte welcome (declared in the code, not yet exercised by a test).
+- The data stream is one-way; all input goes through `terminal.write`, so a pane keeps working even if the phone's
+  keyboard is hidden.
+- Text selection, link opening, and kitty graphics are not implemented in the renderer yet; frames are redrawn
+  whole rather than by damage rectangles.
+- Scrollback is whatever the server replays; the renderer only shows the visible grid (no local history).

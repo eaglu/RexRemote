@@ -1,0 +1,106 @@
+name: RexRemote
+options:
+  bundleIdPrefix: com.faye
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    # The vendored libghostty-vt simulator slice is arm64 only.
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+
+targets:
+  RexRemote:
+    type: application
+    platform: iOS
+    sources:
+      - path: RexRemote
+    dependencies:
+      - framework: Vendor/ghostty-vt.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.faye.RexRemote
+        PRODUCT_NAME: RexRemote
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
+    info:
+      path: RexRemote/Info.plist
+      properties:
+        CFBundleDisplayName: Rex Remote
+        UIUserInterfaceStyle: Light
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: >-
+          Rex Remote connects to your Rex servers on the local network.
+        NSBonjourServices:
+          - _rex._tcp
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+
+  RexRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: RexRemoteTests
+    dependencies:
+      - target: RexRemote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.faye.RexRemoteTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/RexRemote.app/RexRemote"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        SWIFT_VERSION: "5.0"
+
+  RexRemoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: RexRemoteUITests
+    dependencies:
+      - target: RexRemote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.faye.RexRemoteUITests
+        TEST_TARGET_NAME: RexRemote
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+
+schemes:
+  RexRemote:
+    build:
+      targets:
+        RexRemote: all
+        RexRemoteTests: [test]
+        RexRemoteUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - RexRemoteTests
+        - RexRemoteUITests
