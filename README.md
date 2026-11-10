@@ -161,4 +161,4 @@ that were explored live in `Design/` (`icon-official-web.png`, `icon-official-ma
    drives a live Rex server that CI does not have,
 3. builds a Release device build with signing disabled and uploads `RexRemote-unsigned.ipa` as a workflow artifact.
 
-Tagged builds (`v*`) are what the releases under [Releases](../../releases) are cut from.
+Tagged builds (`v*`) are what the releases under [Releases](https://github.com/eaglu/RexRemote/releases) are cut from.
