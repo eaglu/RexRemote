@@ -116,6 +116,47 @@ final class TerminalController: NSObject, ObservableObject {
         enqueue(bytes)
     }
 
+    /// Hand a key to libghostty's encoder instead of guessing bytes: only the
+    /// encoder knows whether the running application wants legacy keys, SS3 or
+    /// kitty-keyboard sequences.
+    func sendKey(_ press: TerminalKeyPress) {
+        if let surface = terminalView?.surface, surface.sendKey(press) { return }
+        if let bytes = Self.legacyBytes(for: press) { enqueue(bytes) }
+    }
+
+    /// The selection libghostty drew, if the user has one.
+    func selectedText() -> String? {
+        guard let text = terminalView?.surface?.readSelection() else { return nil }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+    }
+
+    /// Paste through the surface so bracketed-paste mode is honoured.
+    func paste(_ text: String) {
+        guard !text.isEmpty else { return }
+        if terminalView?.surface?.paste(text: text) == true { return }
+        enqueue(Array(text.utf8))
+    }
+
+    /// What a dumb terminal would have received, for the moment before the
+    /// surface exists.
+    private static func legacyBytes(for press: TerminalKeyPress) -> [UInt8]? {
+        switch (press.key, press.modifiers) {
+        case (.escape, []): return [0x1B]
+        case (.tab, []): return [0x09]
+        case (.enter, []): return [0x0D]
+        case (.backspace, []): return [0x7F]
+        case (.arrowUp, []): return [0x1B, 0x5B, 0x41]
+        case (.arrowDown, []): return [0x1B, 0x5B, 0x42]
+        case (.arrowRight, []): return [0x1B, 0x5B, 0x43]
+        case (.arrowLeft, []): return [0x1B, 0x5B, 0x44]
+        case (.c, .ctrl): return [0x03]
+        case (.d, .ctrl): return [0x04]
+        case (.z, .ctrl): return [0x1A]
+        case (.l, .ctrl): return [0x0C]
+        default: return nil
+        }
+    }
+
     /// Keystrokes arrive faster than an RPC round trip, and every request is its
     /// own task, so sending them one by one lets them overtake each other and the
     /// shell sees the letters out of order. Coalesce a frame's worth of input

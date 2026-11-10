@@ -185,6 +185,15 @@ prebuilt XCFramework, no Zig needed):
   ligatures, cursor shapes, selection and links are Ghostty's rather than ours.
 - The palette comes from `RexTheme.ghosttyTheme` at launch and is replaced by the
   `theme` directive the server weaves into the stream.
+- Key row presses (esc, tab, ctrl chords, arrows) go through libghostty's key
+  encoder instead of hand-written bytes, so arrows turn into SS3 or
+  `CSI 1;<mods>` sequences when the application asks for them.
+- The pane menu carries **Copy** (the selection libghostty drew) and **Paste**
+  (through the surface, so bracketed paste is honoured); hyperlinks opened in the
+  grid are handed to `UIApplication.open` by `TerminalSurface.Coordinator`.
+- The top bar is a `ZStack`: the session label is centred against the screen and
+  the trailing cluster holds only refresh and the overflow menu, because a
+  narrower cluster is what actually centres a label between two sides.
 - `GhosttySession`, `GhosttyGridView` and their tests are gone with it.
 
 Known edge: a lone `esc` from the key row leaves zle waiting for the rest of a

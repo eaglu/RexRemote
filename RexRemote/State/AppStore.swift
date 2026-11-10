@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum ConnectionState: Equatable {
     case disconnected(String?)
@@ -44,6 +45,18 @@ final class AppStore: ObservableObject {
     }
 
     func controller(for blockID: String) -> TerminalController? { controllers[blockID] }
+
+    /// Copy what libghostty has selected; the selection lives in its surface,
+    /// not in a UIKit text view.
+    func copySelection(blockID: String) {
+        guard let text = controller(for: blockID)?.selectedText() else { return }
+        UIPasteboard.general.string = text
+    }
+
+    func pasteClipboard(blockID: String) {
+        guard let text = UIPasteboard.general.string, !text.isEmpty else { return }
+        controller(for: blockID)?.paste(text)
+    }
 
     // MARK: - Connection
 

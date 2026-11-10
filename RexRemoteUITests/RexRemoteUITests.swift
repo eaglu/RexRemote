@@ -190,6 +190,30 @@ final class RexRemoteUITests: XCTestCase {
         XCTAssertTrue(applied, "pasted address was not applied: \(String(describing: address.value))")
     }
 
+    /// Selection, pasting and link opening live behind the pane menu, so the
+    /// menu has to carry them.
+    func testPaneMenuOffersCopyAndPaste() throws {
+        let app = launchedApp()
+
+        app.buttons["connectButton"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "dev")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "session list never loaded")
+        row.tap()
+
+        let menu = app.buttons["paneMenuButton"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 20), "pane menu missing")
+        menu.tap()
+
+        XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5), "no Copy in the pane menu")
+        XCTAssertTrue(app.buttons["Paste"].exists, "no Paste in the pane menu")
+        snapshot("15-pane-menu")
+
+        // Two "Paste" entries exist while our menu is open — ours and the
+        // system text menu's — so dismiss by tapping the page instead of pick
+        // one by name.
+        app.tap()
+    }
+
     /// Taps a text field and lets focus settle; typing into a field that is
     /// still becoming first responder drops the first keystroke.
     private func focus(_ element: XCUIElement) {

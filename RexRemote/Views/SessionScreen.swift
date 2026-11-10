@@ -83,66 +83,66 @@ struct SessionScreen: View {
     /// of a full-width bar, so the paper stays visible between them.
     private var topBar: some View {
         GlassEffectContainer(spacing: 10) {
-        HStack(spacing: 10) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
+            // The label is centred against the screen, not against the two
+            // clusters, so a narrow action strip is what actually centres it.
+            ZStack {
+                Text(view?.label ?? session.label)
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(RexTheme.ink)
-                    .frame(width: 44, height: 44)
-                    .glassEffect(RexTheme.glass(interactive: true), in: .circle)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("backButton")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .glassEffect(RexTheme.glass(), in: .capsule)
+                    .padding(.horizontal, 74)
 
-            Spacer(minLength: 0)
-
-            Text(view?.label ?? session.label)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(RexTheme.ink)
-                .lineLimit(1)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .glassEffect(RexTheme.glass(), in: .capsule)
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 0) {
-                Button {
-                    Task { await store.newWindow() }
-                } label: {
-                    glyph("plus.rectangle.on.rectangle")
-                }
-                .accessibilityIdentifier("newTabButton")
-                Button {
-                    Task { await store.refreshView() }
-                } label: {
-                    glyph("arrow.clockwise")
-                }
-                .accessibilityIdentifier("refreshButton")
-                Menu {
-                    Button("New window") { Task { await store.newWindow() } }
-                    if let window {
-                        Button("Rename window…") {
-                            renamingWindowID = window.id
-                            renameText = window.label
-                        }
-                        Button("Close window", role: .destructive) {
-                            Task { await store.closeWindow(window.id) }
-                        }
+                HStack(spacing: 10) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(RexTheme.ink)
+                            .frame(width: 44, height: 44)
+                            .glassEffect(RexTheme.glass(interactive: true), in: .circle)
                     }
-                    Divider()
-                    Button("Disconnect", role: .destructive) { store.disconnect() }
-                } label: {
-                    glyph("ellipsis")
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("backButton")
+
+                    Spacer(minLength: 0)
+
+                    // New window lives on the tab strip, so the top bar keeps
+                    // only the two things that have nowhere else to go.
+                    HStack(spacing: 0) {
+                        Button {
+                            Task { await store.refreshView() }
+                        } label: {
+                            glyph("arrow.clockwise")
+                        }
+                        .accessibilityIdentifier("refreshButton")
+                        Menu {
+                            Button("New window") { Task { await store.newWindow() } }
+                            if let window {
+                                Button("Rename window…") {
+                                    renamingWindowID = window.id
+                                    renameText = window.label
+                                }
+                                Button("Close window", role: .destructive) {
+                                    Task { await store.closeWindow(window.id) }
+                                }
+                            }
+                            Divider()
+                            Button("Disconnect", role: .destructive) { store.disconnect() }
+                        } label: {
+                            glyph("ellipsis")
+                        }
+                        .accessibilityIdentifier("sessionMenuButton")
+                    }
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 3)
+                    .glassEffect(RexTheme.glass(), in: .capsule)
                 }
-                .accessibilityIdentifier("sessionMenuButton")
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-            .glassEffect(RexTheme.glass(), in: .capsule)
-        }
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
@@ -153,7 +153,7 @@ struct SessionScreen: View {
         Image(systemName: name)
             .font(.system(size: 17, weight: .medium))
             .foregroundStyle(RexTheme.ink)
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 42)
             .contentShape(Rectangle())
     }
 
@@ -493,6 +493,13 @@ struct PaneContent: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("zoomPaneButton")
             Menu {
+                Button("Copy") {
+                    store.copySelection(blockID: placement.block.id)
+                }
+                Button("Paste") {
+                    store.pasteClipboard(blockID: placement.block.id)
+                }
+                Divider()
                 Button("Split right") {
                     Task { await store.split(blockID: placement.block.id, direction: "horizontal") }
                 }
