@@ -17,7 +17,10 @@ struct HostConfig: Identifiable, Hashable, Codable {
     func baseURL() throws -> URL {
         var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw HostError.invalidAddress }
-        if !text.contains("://") { text = "http://" + text }
+        if !text.contains("://") {
+            let tailnet = text.lowercased().split(separator: "/")[0].contains(".ts.net")
+            text = (tailnet ? "https://" : "http://") + text
+        }
         guard var components = URLComponents(string: text) else { throw HostError.invalidAddress }
         if components.port == nil, let scheme = components.scheme?.lowercased(),
            scheme == "http" || scheme == "ws" {
@@ -27,6 +30,12 @@ struct HostConfig: Identifiable, Hashable, Codable {
             throw HostError.invalidAddress
         }
         return url
+    }
+
+    /// True when the host is reached over HTTPS, so tickets and sockets must use wss.
+    var isSecure: Bool {
+        let scheme = (try? baseURL().scheme)?.lowercased()
+        return scheme == "https" || scheme == "wss"
     }
 
     func controlURL() throws -> URL { try socketURL(path: "/api/control") }
