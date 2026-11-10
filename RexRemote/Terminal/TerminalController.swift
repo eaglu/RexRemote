@@ -120,11 +120,15 @@ final class TerminalController: NSObject, ObservableObject {
         inputFlushTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000)
             guard let self else { return }
-            let outgoing = self.pendingInput
-            self.pendingInput = []
+            // Drain everything that piled up, one write at a time. The task stays
+            // non-nil until the queue is empty, so a keystroke arriving mid-write
+            // can never start a second, competing flush.
+            while !self.pendingInput.isEmpty {
+                let outgoing = self.pendingInput
+                self.pendingInput = []
+                await self.store.write(bytes: outgoing, sessionID: self.sessionID, blockID: self.blockID)
+            }
             self.inputFlushTask = nil
-            guard !outgoing.isEmpty else { return }
-            await self.store.write(bytes: outgoing, sessionID: self.sessionID, blockID: self.blockID)
         }
     }
 

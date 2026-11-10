@@ -18,6 +18,12 @@ final class GhosttyGridView: UIView {
     /// Reports the grid the view managed to fit, so the pty can be resized.
     var onGridChange: ((Int, Int, CGSize) -> Void)?
 
+    /// Composition text from the IME. It is not in the terminal's grid yet, so
+    /// the view draws it itself at the cursor cell.
+    var preedit: String = "" {
+        didSet { if preedit != oldValue { setNeedsDisplay() } }
+    }
+
     var theme: Theme {
         didSet { setNeedsDisplay() }
     }
@@ -60,6 +66,9 @@ final class GhosttyGridView: UIView {
         }
         inputField.onKey = { [weak self] bytes in
             self?.onInput?(bytes)
+        }
+        inputField.onPreedit = { [weak self] text in
+            self?.preedit = text
         }
         addSubview(inputField)
     }
@@ -125,6 +134,7 @@ final class GhosttyGridView: UIView {
             drawRow(row, rowIndex: rowIndex, cols: colsPerRow, context: context)
         }
         drawCursor(in: frame, context: context)
+        drawPreedit(in: frame, context: context)
     }
 
     private func drawRow(_ row: [GhosttySession.Cell], rowIndex: Int, cols: Int, context: CGContext) {
@@ -230,6 +240,36 @@ final class GhosttyGridView: UIView {
         }
     }
 
+    /// Composition text from the IME. It is not in the grid yet, so it is drawn
+    /// on top of the cursor cell with an underline, the way a terminal shows an
+    /// uncommitted pinyin phrase.
+    private func drawPreedit(in frame: GhosttySession.Frame, context: CGContext) {
+        guard !preedit.isEmpty, let cursor = frame.cursor else { return }
+        let attributes = attributes(for: GhosttySession.Cell(text: preedit))
+        let line = cachedLine(preedit, attributes: attributes)
+        let x = CGFloat(cursor.x) * cellSize.width
+        let y = CGFloat(cursor.y) * cellSize.height
+        let width = CGFloat(preedit.count) * cellSize.width
+        context.saveGState()
+        context.clip(to: CGRect(
+            x: x,
+            y: y,
+            width: max(cellSize.width, min(width, bounds.width - x)),
+            height: cellSize.height
+        ))
+        context.setFillColor(theme.background.cgColor)
+        context.fill(CGRect(x: x, y: y, width: width, height: cellSize.height))
+        context.setFillColor(theme.foreground.cgColor)
+        context.textPosition = CGPoint(x: x, y: y + baselineOffset)
+        CTLineDraw(line, context)
+        context.setStrokeColor(theme.foreground.cgColor)
+        context.setLineWidth(1)
+        context.move(to: CGPoint(x: x, y: y + cellSize.height - 1))
+        context.addLine(to: CGPoint(x: x + width, y: y + cellSize.height - 1))
+        context.strokePath()
+        context.restoreGState()
+    }
+
     // MARK: - Colours
 
     private func background(for cell: GhosttySession.Cell) -> UIColor? {
@@ -288,7 +328,28 @@ final class GhosttyGridView: UIView {
 
     @objc private func handleTap() {
         onTap?()
-        inputField.becomeFirstResponder()
+        focusInput()
+    }
+
+    /// UIKit refuses `becomeFirstResponder` while a pane is still settling after a
+    /// SwiftUI layout pass, which used to make the first tap do nothing.
+    func focusInput(retries: Int = 2) {
+        wantsInput = true
+        if inputField.becomeFirstResponder() { return }
+        guard retries > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.focusInput(retries: retries - 1)
+        }
+    }
+
+    var isInputFocused: Bool { inputField.isFirstResponder }
+
+    /// Set while the user is typing into this pane; cleared by `dismissInput`.
+    private(set) var wantsInput = false
+
+    func dismissInput() {
+        wantsInput = false
+        inputField.resignFirstResponder()
     }
 
     // MARK: - Keyboard
@@ -308,6 +369,8 @@ final class TerminalInputField: UITextView, UITextViewDelegate {
     var onDelete: (() -> Void)?
     /// Raw bytes for keys the grid handles itself (escape, tab, arrows).
     var onKey: (([UInt8]) -> Void)?
+    /// Uncommitted composition text, so the grid can draw it.
+    var onPreedit: ((String) -> Void)?
 
     private var forwarding = false
 
@@ -335,13 +398,22 @@ final class TerminalInputField: UITextView, UITextViewDelegate {
     override var canBecomeFirstResponder: Bool { true }
 
     func textViewDidChange(_ textView: UITextView) {
-        guard !forwarding, markedTextRange == nil else { return }
+        guard !forwarding else { return }
+        guard markedTextRange == nil else {
+            onPreedit?(text ?? "")
+            return
+        }
         let pending = text ?? ""
         guard !pending.isEmpty else { return }
         forwarding = true
         text = ""
         forwarding = false
+        onPreedit?("")
         onCommit?(pending)
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        if markedTextRange != nil { onPreedit?(text ?? "") }
     }
 
     override func deleteBackward() {

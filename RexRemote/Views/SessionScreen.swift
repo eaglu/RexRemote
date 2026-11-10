@@ -11,6 +11,8 @@ struct SessionScreen: View {
     @EnvironmentObject private var store: AppStore
     @State private var selectedWindowID: String?
     @State private var composeText = ""
+    /// Tracks the compose field so the panes stop pulling the keyboard back.
+    @FocusState private var composeFocused: Bool
     @State private var showKeys = true
     @State private var renamingWindowID: String?
     @State private var renameText = ""
@@ -252,7 +254,8 @@ struct SessionScreen: View {
                             sessionID: view.id,
                             placement: placement,
                             isFocused: placement.id == focusedBlockID,
-                            isZoomed: store.localZoomBlockID == placement.id
+                            isZoomed: store.localZoomBlockID == placement.id,
+                            keepKeyboard: !composeFocused
                         )
                         .frame(width: frame.width, height: frame.height)
                         .offset(x: frame.minX, y: frame.minY)
@@ -321,6 +324,7 @@ struct SessionScreen: View {
                     text: $composeText
                 )
                 .font(RexTheme.mono(13))
+                .focused($composeFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.send)
@@ -396,12 +400,15 @@ struct PaneContainer: View {
     let placement: PanePlacement
     let isFocused: Bool
     let isZoomed: Bool
+    /// False while the compose field owns the keyboard.
+    let keepKeyboard: Bool
 
     var body: some View {
         PaneContent(
             controller: store.controller(sessionID: sessionID, blockID: placement.block.id),
             placement: placement,
             isFocused: isFocused,
+            keepKeyboard: keepKeyboard,
             isZoomed: isZoomed
         )
     }
@@ -412,6 +419,7 @@ struct PaneContent: View {
     @ObservedObject var controller: TerminalController
     let placement: PanePlacement
     let isFocused: Bool
+    let keepKeyboard: Bool
     let isZoomed: Bool
 
     var body: some View {
@@ -425,7 +433,7 @@ struct PaneContent: View {
                 // cuts the first column off against the card edge.
                 Color.clear
                     .overlay(alignment: .topLeading) {
-                        TerminalSurface(controller: controller)
+                        TerminalSurface(controller: controller, keepKeyboard: keepKeyboard)
                             .frame(
                                 width: max(1, proxy.size.width - 4),
                                 height: max(1, proxy.size.height)

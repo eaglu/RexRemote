@@ -4,6 +4,10 @@ import UIKit
 /// Hosts the libghostty-backed canvas for one block.
 struct TerminalSurface: UIViewRepresentable {
     @ObservedObject var controller: TerminalController
+    /// Keep the keyboard attached while the pane is the focused one, even when a
+    /// server event rebuilds the view hierarchy. Suppressed while the compose
+    /// field is being edited, so tapping it does not bounce focus back.
+    var keepKeyboard: Bool = true
 
     func makeUIView(context: Context) -> GhosttyGridView {
         let view = GhosttyGridView(theme: RexTheme.terminalTheme)
@@ -14,6 +18,9 @@ struct TerminalSurface: UIViewRepresentable {
 
     func updateUIView(_ uiView: GhosttyGridView, context: Context) {
         uiView.setNeedsDisplay()
+        if keepKeyboard, uiView.wantsInput, !uiView.isInputFocused {
+            uiView.focusInput()
+        }
     }
 }
 
