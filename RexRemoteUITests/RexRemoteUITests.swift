@@ -97,10 +97,12 @@ final class RexRemoteUITests: XCTestCase {
                        "compose field lost a keystroke before sending")
         app.buttons["sendButton"].tap()
 
-        // 5. A key from the key bar does not crash the stream.
-        let enterKey = app.buttons["key-esc"]
-        if enterKey.waitForExistence(timeout: 5) {
-            enterKey.tap()
+        // 5. A key from the key bar reaches the pty. Deliberately not `esc`: a
+        // lone ESC stays pending as a meta prefix in the shell, so the next
+        // character typed (even in a later run) is swallowed.
+        let clearKey = app.buttons["key-ctrl-l"]
+        if clearKey.waitForExistence(timeout: 5) {
+            clearKey.tap()
         }
 
         XCTAssertTrue(paneMenu.waitForExistence(timeout: 10), "pane disappeared after input")

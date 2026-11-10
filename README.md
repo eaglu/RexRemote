@@ -171,6 +171,26 @@ pill is baked into the artwork — so the icon keeps it verbatim rather than inv
 that were explored live in `Design/` (`icon-official-web.png`, `icon-official-mac.png`, `dino-*.png` drafts,
 `icon-candidates.png` contact sheet).
 
+## Renderer (branch `ghosttykit`)
+
+This branch swaps the hand-written grid for **libghostty** through
+[`lakr233/libghostty-spm`](https://github.com/lakr233/libghostty-spm) (MIT,
+prebuilt XCFramework, no Zig needed):
+
+- `InMemoryTerminalSession` is the seam — the Rex stream is pushed in with
+  `receive(_:)`, and the bytes the terminal produces (typing, key row, paste)
+  come back out through the session's `write` handler, coalesced into one
+  `terminal.write` RPC every 8 ms.
+- The surface is libghostty's own view, so rendering (Metal), wide characters,
+  ligatures, cursor shapes, selection and links are Ghostty's rather than ours.
+- The palette comes from `RexTheme.ghosttyTheme` at launch and is replaced by the
+  `theme` directive the server weaves into the stream.
+- `GhosttySession`, `GhosttyGridView` and their tests are gone with it.
+
+Known edge: a lone `esc` from the key row leaves zle waiting for the rest of a
+key sequence (`KEYTIMEOUT`), so the shell eats the next character. That is the
+shell's behaviour, not the app's — vim and less rely on it.
+
 ## Screens
 
 | | |

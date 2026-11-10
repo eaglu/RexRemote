@@ -1,9 +1,10 @@
 import Foundation
+import GhosttyTerminal
 import UIKit
 
-/// Owns the live terminal stream for one block and mirrors it into a
-/// `GhosttyGridView`. The stream starts with a Ghostty snapshot, which this class
-/// skips in favor of a `terminal.format` VT dump so both paths agree.
+/// Owns the live terminal stream for one block and mirrors it into a libghostty
+/// surface. The stream starts with a Ghostty snapshot, which this class skips in
+/// favor of a `terminal.format` VT dump so both paths agree.
 @MainActor
 final class TerminalController: NSObject, ObservableObject {
     enum Phase: Equatable {
@@ -21,11 +22,11 @@ final class TerminalController: NSObject, ObservableObject {
     @Published private(set) var terminalTitle: String = ""
     @Published private(set) var gridSize: String = ""
 
-    /// The terminal core. It exists before the view does so early bytes are kept.
-    let terminal: GhosttySession?
+    /// The libghostty session. It exists before the view does so early bytes are
+    /// buffered by the library until the surface attaches.
+    private(set) var terminal: InMemoryTerminalSession!
 
-    private weak var gridView: GhosttyGridView?
-    private var themeApplied = false
+    private weak var terminalView: TerminalView?
     private var socket: WebSocketConnection?
     private var parser: RexStreamParser?
     private var gotWelcome = false
@@ -40,35 +41,41 @@ final class TerminalController: NSObject, ObservableObject {
     private var pendingInput: [UInt8] = []
     private var inputFlushTask: Task<Void, Never>?
     private var lastRequestedGrid: (cols: Int, rows: Int) = (0, 0)
+    private var themeApplied = false
 
     init(sessionID: String, blockID: String, store: AppStore) {
         self.sessionID = sessionID
         self.blockID = blockID
         self.store = store
-        self.terminal = GhosttySession(cols: 80, rows: 24, cellWidthPx: 0, cellHeightPx: 0)
         super.init()
-        // The core resolves every cell colour against its own defaults, so the
-        // app's ink-on-paper palette has to be in place before the first byte or
-        // the screen dump is drawn in the library's white-on-black default.
-        self.terminal?.setColors(
-            foreground: GhosttySession.RGB(hex: "#38342E") ?? GhosttySession.RGB.black,
-            background: GhosttySession.RGB(hex: "#FAF8F3") ?? GhosttySession.RGB.black,
-            cursor: GhosttySession.RGB(hex: "#38342E"),
-            palette: RexTheme.terminalPalette
+        // These closures run on libghostty's threads. Input goes through the same
+        // coalescing path as the key row, otherwise every keystroke becomes its
+        // own RPC and the shell sees the letters out of order.
+        terminal = InMemoryTerminalSession(
+            write: { [weak self] data in
+                Task { @MainActor in
+                    self?.handleTyped([UInt8](data))
+                }
+            },
+            resize: { [weak self] viewport in
+                Task { @MainActor in
+                    self?.handleViewport(
+                        cols: Int(viewport.columns),
+                        rows: Int(viewport.rows),
+                        cellSize: CGSize(
+                            width: Int(viewport.cellWidthPixels),
+                            height: Int(viewport.cellHeightPixels)
+                        )
+                    )
+                }
+            }
         )
     }
 
     // MARK: - View wiring
 
-    func attach(_ view: GhosttyGridView) {
-        gridView = view
-        view.session = terminal
-        view.onInput = { [weak self] bytes in
-            self?.handleTyped(bytes)
-        }
-        view.onGridChange = { [weak self] cols, rows, cell in
-            self?.handleGridChange(cols: cols, rows: rows, cellSize: cell)
-        }
+    func attach(_ view: TerminalView) {
+        terminalView = view
         if case .idle = phase {
             start()
         }
@@ -142,8 +149,8 @@ final class TerminalController: NSObject, ObservableObject {
             // everything up to the moment the socket goes live.
             let ticket = try await store.requestTerminalTicket(sessionID: sessionID, blockID: blockID)
             let dump = try await store.screenDump(sessionID: sessionID, blockID: blockID)
-            // RIS clears whatever the core kept from an earlier attach before the
-            // dump redraws the screen.
+            // RIS clears whatever the surface kept from an earlier attach before
+            // the dump redraws the screen.
             feedToTerminal(Array("\u{1B}c".utf8))
             feedToTerminal(Array(dump.utf8))
 
@@ -256,14 +263,12 @@ final class TerminalController: NSObject, ObservableObject {
     }
 
     private func feedToTerminal(_ bytes: [UInt8]) {
-        guard !bytes.isEmpty, let terminal else { return }
-        terminal.write(bytes[...])
-
-        gridView?.setNeedsDisplay()
+        guard !bytes.isEmpty else { return }
+        terminal.receive(Data(bytes))
     }
 
     private func applyDirectives(_ directives: [RexStreamParser.Directive]) {
-        for directive in directives.suffix(1) {
+        for directive in directives {
             switch directive.type {
             case "resize":
                 let cols = directive.body.int("columns") ?? directive.body.int("cols") ?? 0
@@ -278,36 +283,30 @@ final class TerminalController: NSObject, ObservableObject {
     }
 
     /// Rex sends the Mac app's theme with the stream, so the pane looks like the
-    /// window on the Mac instead of a hard-coded palette.
+    /// window on the Mac instead of libghostty's default palette.
     private func applyTheme(_ body: JSONObject) {
-        guard let terminal else { return }
-        let foreground = GhosttySession.RGB(hex: body.string("foreground")) ?? GhosttySession.RGB(hex: "#1F2328")!
-        let background = GhosttySession.RGB(hex: body.string("background")) ?? GhosttySession.RGB(hex: "#FBFCFD")!
-        let cursor = GhosttySession.RGB(hex: body.string("cursor"))
-        let palette = body.strings("palette").compactMap { GhosttySession.RGB(hex: $0) }
-        terminal.setColors(
-            foreground: foreground,
-            background: background,
-            cursor: cursor,
-            palette: palette
-        )
+        guard let foreground = body.string("foreground"),
+              let background = body.string("background"),
+              !themeApplied
+        else { return }
+        let cursor = body.string("cursor")
+        let palette = body.strings("palette")
         themeApplied = true
-        gridView?.theme = GhosttyGridView.Theme(
-            background: Self.uiColor(background),
-            foreground: Self.uiColor(foreground),
-            cursor: Self.uiColor(cursor ?? foreground),
-            palette: palette.map(Self.uiColor)
-        )
-        gridView?.setNeedsDisplay()
-    }
 
-    private static func uiColor(_ rgb: GhosttySession.RGB) -> UIColor {
-        UIColor(
-            red: CGFloat(rgb.red) / 255,
-            green: CGFloat(rgb.green) / 255,
-            blue: CGFloat(rgb.blue) / 255,
-            alpha: 1
-        )
+        let configuration = TerminalConfiguration { builder in
+            builder.withBackground(background)
+            builder.withForeground(foreground)
+            if let cursor { builder.withCursorColor(cursor) }
+            for (index, colour) in palette.enumerated() where index < 256 {
+                builder.withPalette(index, color: colour)
+            }
+        }
+        let theme = TerminalTheme(light: configuration, dark: configuration)
+        NSLog("REXDBG theme fg=%@ bg=%@ palette=%d", foreground, background, palette.count)
+        Task { @MainActor in
+            let ok = GhosttyTerminal.TerminalController.shared.setTheme(theme)
+            NSLog("REXDBG setTheme -> %@", ok ? "ok" : "no-change")
+        }
     }
 
     // MARK: - Input
@@ -317,9 +316,9 @@ final class TerminalController: NSObject, ObservableObject {
         type(bytes: bytes)
     }
 
-    /// The view fitted itself to the pane; tell the server so the pty matches,
+    /// The surface reported a new grid size; tell the server so the pty matches,
     /// but only while this app owns the block, otherwise the Mac window jumps.
-    private func handleGridChange(cols: Int, rows: Int, cellSize: CGSize) {
+    private func handleViewport(cols: Int, rows: Int, cellSize: CGSize) {
         guard cols > 0, rows > 0 else { return }
         gridSize = "\(cols)×\(rows)"
         guard store.shouldOwnTerminalSizing else { return }

@@ -1,25 +1,31 @@
+import GhosttyTerminal
 import SwiftUI
 import UIKit
 
-/// Hosts the libghostty-backed canvas for one block.
+/// Hosts libghostty's own terminal view for one block. libghostty renders with
+/// Metal, so selection, links, wide characters and the cursor all behave like the
+/// Mac app instead of being reimplemented here.
 struct TerminalSurface: UIViewRepresentable {
     @ObservedObject var controller: TerminalController
     /// Keep the keyboard attached while the pane is the focused one, even when a
-    /// server event rebuilds the view hierarchy. Suppressed while the compose
-    /// field is being edited, so tapping it does not bounce focus back.
+    /// server event rebuilds the view hierarchy.
     var keepKeyboard: Bool = true
 
-    func makeUIView(context: Context) -> GhosttyGridView {
-        let view = GhosttyGridView(theme: RexTheme.terminalTheme)
-        view.applyFont(size: 10.5)
+    func makeUIView(context: Context) -> TerminalView {
+        let view = TerminalView(frame: .zero)
+        view.controller = GhosttyTerminal.TerminalController.shared
+        view.configuration = TerminalSurfaceOptions(
+            backend: .inMemory(controller.terminal),
+            fontSize: 11,
+            context: .window
+        )
         controller.attach(view)
         return view
     }
 
-    func updateUIView(_ uiView: GhosttyGridView, context: Context) {
-        uiView.setNeedsDisplay()
-        if keepKeyboard, uiView.wantsInput, !uiView.isInputFocused {
-            uiView.focusInput()
+    func updateUIView(_ uiView: TerminalView, context: Context) {
+        if keepKeyboard, !uiView.isFirstResponder {
+            uiView.becomeFirstResponder()
         }
     }
 }
@@ -31,25 +37,26 @@ struct KeyBar: View {
     private struct Key: Identifiable {
         let id: String
         let label: String
-        let press: GhosttySession.KeyPress?
-        let text: String?
+        let bytes: [UInt8]
     }
 
+    private static let escape: UInt8 = 0x1B
+
     private let keys: [Key] = [
-        Key(id: "esc", label: "esc", press: .escape, text: nil),
-        Key(id: "tab", label: "tab", press: .tab, text: nil),
-        Key(id: "ctrl-c", label: "^C", press: .ctrl("c"), text: nil),
-        Key(id: "ctrl-d", label: "^D", press: .ctrl("d"), text: nil),
-        Key(id: "ctrl-z", label: "^Z", press: .ctrl("z"), text: nil),
-        Key(id: "ctrl-l", label: "^L", press: .ctrl("l"), text: nil),
-        Key(id: "up", label: "↑", press: .up, text: nil),
-        Key(id: "down", label: "↓", press: .down, text: nil),
-        Key(id: "right", label: "→", press: .right, text: nil),
-        Key(id: "left", label: "←", press: .left, text: nil),
-        Key(id: "pipe", label: "|", press: nil, text: "|"),
-        Key(id: "tilde", label: "~", press: nil, text: "~"),
-        Key(id: "slash", label: "/", press: nil, text: "/"),
-        Key(id: "dash", label: "-", press: nil, text: "-")
+        Key(id: "esc", label: "esc", bytes: [0x1B]),
+        Key(id: "tab", label: "tab", bytes: [0x09]),
+        Key(id: "ctrl-c", label: "^C", bytes: [0x03]),
+        Key(id: "ctrl-d", label: "^D", bytes: [0x04]),
+        Key(id: "ctrl-z", label: "^Z", bytes: [0x1A]),
+        Key(id: "ctrl-l", label: "^L", bytes: [0x0C]),
+        Key(id: "up", label: "↑", bytes: [escape, 0x5B, 0x41]),
+        Key(id: "down", label: "↓", bytes: [escape, 0x5B, 0x42]),
+        Key(id: "right", label: "→", bytes: [escape, 0x5B, 0x43]),
+        Key(id: "left", label: "←", bytes: [escape, 0x5B, 0x44]),
+        Key(id: "pipe", label: "|", bytes: Array("|".utf8)),
+        Key(id: "tilde", label: "~", bytes: Array("~".utf8)),
+        Key(id: "slash", label: "/", bytes: Array("/".utf8)),
+        Key(id: "dash", label: "-", bytes: Array("-".utf8))
     ]
 
     var body: some View {
@@ -57,7 +64,7 @@ struct KeyBar: View {
             HStack(spacing: 6) {
                 ForEach(keys) { key in
                     Button {
-                        send(key)
+                        controller.type(bytes: key.bytes)
                     } label: {
                         Text(key.label)
                             .font(RexTheme.mono(13.5, weight: .medium))
@@ -73,16 +80,6 @@ struct KeyBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-        }
-    }
-
-    private func send(_ key: Key) {
-        // The encoder knows about cursor mode, the Kitty protocol and modifiers;
-        // plain text keys are cheaper to send as UTF-8.
-        if let press = key.press, let bytes = controller.terminal?.encode(press) {
-            controller.type(bytes: bytes)
-        } else if let text = key.text {
-            controller.type(text)
         }
     }
 }

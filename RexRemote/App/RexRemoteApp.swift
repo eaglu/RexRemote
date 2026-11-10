@@ -1,3 +1,4 @@
+import GhosttyTerminal
 import SwiftUI
 import UIKit
 
@@ -5,6 +6,13 @@ import UIKit
 struct RexRemoteApp: App {
     @StateObject private var store = AppStore()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // libghostty keeps one app-wide configuration, so the Rex palette goes in
+        // before the first surface is created; a `theme` directive from the
+        // server replaces it later.
+        GhosttyTerminal.TerminalController.shared.setTheme(RexTheme.ghosttyTheme)
+    }
 
     var body: some Scene {
         WindowGroup {
