@@ -159,6 +159,11 @@ itself is derived from the font (`(cellHeight - lineHeight) / 2 + ascender`) rat
 core side, the row iterator must be re-fetched from the render state after each `ghostty_render_state_update`, and
 the palette has to be set before the first byte or the dump is resolved against libghostty's white-on-black default.
 
+**Input.** Typing goes through a hidden `UITextView` instead of `UIKeyInput`, so an IME (pinyin, kana, …) composes
+before anything is sent — with `UIKeyInput` every pre-edit letter reached the shell as its own keystroke. Committed text
+is cleared from the host view immediately, and a frame's worth of keystrokes is coalesced into one
+`com.superlogical.terminal.write`: one request per keystroke let them overtake each other and land out of order.
+
 **App icon.** `RexRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png` is the official Rex mark (rainbow field, cream
 dino, `BETA` pill), taken from `Rex Beta.app/Contents/Resources/App Icon Beta.icns` and upscaled 256 → 1024. No
 larger or pill-free original exists — the web set (`rex-icon.png`, `apple-touch-icon`, `favicon`) is also 256 px and the

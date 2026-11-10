@@ -3,7 +3,7 @@ import UIKit
 
 /// The terminal canvas: draws a `GhosttySession` frame with Core Text and turns
 /// touches, the software keyboard and hardware keys into terminal input.
-final class GhosttyGridView: UIView, UIKeyInput {
+final class GhosttyGridView: UIView {
     struct Theme {
         var background: UIColor
         var foreground: UIColor
@@ -36,6 +36,10 @@ final class GhosttyGridView: UIView, UIKeyInput {
     private var lines: [String: CTLine] = [:]
     private var blinkOn = true
     private var blinkTimer: Timer?
+    /// Invisible text view that owns the system keyboard. Using a real text view
+    /// is what lets an IME (pinyin, kana, …) compose before anything is sent: the
+    /// grid itself would otherwise receive every pre-edit letter as a keystroke.
+    private let inputField = TerminalInputField()
 
     // MARK: - Init
 
@@ -47,6 +51,17 @@ final class GhosttyGridView: UIView, UIKeyInput {
         isMultipleTouchEnabled = false
         contentMode = .redraw
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap)))
+
+        inputField.onCommit = { [weak self] text in
+            self?.onInput?(Array(text.utf8))
+        }
+        inputField.onDelete = { [weak self] in
+            self?.onInput?([0x7F])
+        }
+        inputField.onKey = { [weak self] bytes in
+            self?.onInput?(bytes)
+        }
+        addSubview(inputField)
     }
 
     @available(*, unavailable)
@@ -273,29 +288,84 @@ final class GhosttyGridView: UIView, UIKeyInput {
 
     @objc private func handleTap() {
         onTap?()
-        becomeFirstResponder()
+        inputField.becomeFirstResponder()
     }
 
     // MARK: - Keyboard
 
-    var hasText: Bool { true }
+    func dismissKeyboard() {
+        inputField.resignFirstResponder()
+    }
+}
 
-    func insertText(_ text: String) {
-        onInput?(Array(text.utf8))
+/// Keyboard host for `GhosttyGridView`.
+///
+/// Composition text (marked text) stays inside this view, so a pinyin session
+/// only reaches the pty once the user picks a character; plain typing is
+/// forwarded one commit at a time.
+final class TerminalInputField: UITextView, UITextViewDelegate {
+    var onCommit: ((String) -> Void)?
+    var onDelete: (() -> Void)?
+    /// Raw bytes for keys the grid handles itself (escape, tab, arrows).
+    var onKey: (([UInt8]) -> Void)?
+
+    private var forwarding = false
+
+    init() {
+        super.init(frame: CGRect(x: 0, y: 0, width: 1, height: 1), textContainer: nil)
+        delegate = self
+        alpha = 0.02
+        backgroundColor = .clear
+        tintColor = .clear
+        textColor = .clear
+        isScrollEnabled = false
+        autocorrectionType = .no
+        autocapitalizationType = .none
+        spellCheckingType = .no
+        smartQuotesType = .no
+        smartDashesType = .no
+        keyboardAppearance = .light
+        textContainerInset = .zero
+        textContainer.lineFragmentPadding = 0
     }
 
-    func deleteBackward() {
-        onInput?([0x7F])
-    }
-
-    var keyboardType: UIKeyboardType = .asciiCapable
-    var autocorrectionType: UITextAutocorrectionType = .no
-    var autocapitalizationType: UITextAutocapitalizationType = .none
-    var spellCheckingType: UITextSpellCheckingType = .no
-    var smartQuotesType: UITextSmartQuotesType = .no
-    var smartDashesType: UITextSmartDashesType = .no
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var canBecomeFirstResponder: Bool { true }
+
+    func textViewDidChange(_ textView: UITextView) {
+        guard !forwarding, markedTextRange == nil else { return }
+        let pending = text ?? ""
+        guard !pending.isEmpty else { return }
+        forwarding = true
+        text = ""
+        forwarding = false
+        onCommit?(pending)
+    }
+
+    override func deleteBackward() {
+        if (text ?? "").isEmpty {
+            onDelete?()
+        } else {
+            super.deleteBackward()
+        }
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            guard let key = press.key else { continue }
+            switch key.keyCode {
+            case .keyboardEscape: onKey?([0x1B])
+            case .keyboardTab: onKey?([0x09])
+            case .keyboardUpArrow: onKey?(Array("\u{1B}[A".utf8))
+            case .keyboardDownArrow: onKey?(Array("\u{1B}[B".utf8))
+            case .keyboardRightArrow: onKey?(Array("\u{1B}[C".utf8))
+            case .keyboardLeftArrow: onKey?(Array("\u{1B}[D".utf8))
+            default: super.pressesBegan([press], with: event)
+            }
+        }
+    }
 }
 
 private extension String {

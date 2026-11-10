@@ -37,6 +37,8 @@ final class TerminalController: NSObject, ObservableObject {
     private var bytesReceived: UInt64 = 0
     private var startTask: Task<Void, Never>?
     private var resizeTask: Task<Void, Never>?
+    private var pendingInput: [UInt8] = []
+    private var inputFlushTask: Task<Void, Never>?
     private var lastRequestedGrid: (cols: Int, rows: Int) = (0, 0)
 
     init(sessionID: String, blockID: String, store: AppStore) {
@@ -84,6 +86,9 @@ final class TerminalController: NSObject, ObservableObject {
         startTask = nil
         resizeTask?.cancel()
         resizeTask = nil
+        inputFlushTask?.cancel()
+        inputFlushTask = nil
+        pendingInput = []
         socket?.close()
         socket = nil
         phase = .idle
@@ -97,16 +102,29 @@ final class TerminalController: NSObject, ObservableObject {
 
     /// Type into the shell the way the Mac app does: straight bytes.
     func type(_ text: String) {
-        Task { [weak self] in
-            guard let self else { return }
-            await self.store.write(text, sessionID: self.sessionID, blockID: self.blockID)
-        }
+        enqueue(Array(text.utf8))
     }
 
     func type(bytes: [UInt8]) {
-        Task { [weak self] in
+        enqueue(bytes)
+    }
+
+    /// Keystrokes arrive faster than an RPC round trip, and every request is its
+    /// own task, so sending them one by one lets them overtake each other and the
+    /// shell sees the letters out of order. Coalesce a frame's worth of input
+    /// into a single write instead.
+    private func enqueue(_ bytes: [UInt8]) {
+        guard !bytes.isEmpty else { return }
+        pendingInput.append(contentsOf: bytes)
+        guard inputFlushTask == nil else { return }
+        inputFlushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000)
             guard let self else { return }
-            await self.store.write(bytes: bytes, sessionID: self.sessionID, blockID: self.blockID)
+            let outgoing = self.pendingInput
+            self.pendingInput = []
+            self.inputFlushTask = nil
+            guard !outgoing.isEmpty else { return }
+            await self.store.write(bytes: outgoing, sessionID: self.sessionID, blockID: self.blockID)
         }
     }
 
