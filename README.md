@@ -3,6 +3,8 @@
 An iOS client for a [Rex](https://www.superlogical.com/rex/docs/automate/server-api) server: connect to a Mac over the
 Rex Server API, browse sessions and windows, and drive the panes from the phone.
 
+[![CI](https://github.com/eaglu/RexRemote/actions/workflows/ci.yml/badge.svg)](https://github.com/eaglu/RexRemote/actions/workflows/ci.yml)
+
 ![Sessions](shots/02-sessions.png)
 
 ## What it does
@@ -149,3 +151,14 @@ that were explored live in `Design/` (`icon-official-web.png`, `icon-official-ma
 - Text selection, link opening, and kitty graphics are not implemented in the renderer yet; frames are redrawn
   whole rather than by damage rectangles.
 - Scrollback is whatever the server replays; the renderer only shows the visible grid (no local history).
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`, on tags, and on pull requests:
+
+1. picks the newest stable Xcode and fails loudly if the iOS SDK is older than 26 (the glass APIs need it),
+2. `xcodegen generate`, then the unit suite only — `-only-testing:RexRemoteTests`, because `RexRemoteUITests`
+   drives a live Rex server that CI does not have,
+3. builds a Release device build with signing disabled and uploads `RexRemote-unsigned.ipa` as a workflow artifact.
+
+Tagged builds (`v*`) are what the releases under [Releases](../../releases) are cut from.
