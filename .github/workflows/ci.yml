@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          SDK=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK: $SDK"
+          case "$SDK" in
+            2[6-9].*|3[0-9].*) ;;
+            *) echo "::error::Rex Remote needs the iOS 26 SDK or newer (Liquid Glass APIs); this runner has $SDK"; exit 1 ;;
+          esac
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Pick a booted-capable iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available --json \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for rt in sorted(d) for x in d[rt] if x["name"].startswith("iPhone")))')
+          echo "Using simulator $UDID"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Unit tests (renderer + terminal core)
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project RexRemote.xcodeproj \
+            -scheme RexRemote \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -only-testing:RexRemoteTests \
+            CODE_SIGNING_ALLOWED=NO
+        # The UI test is deliberately not run here: it drives a live Rex server,
+        # which CI does not have. See README "Test".
+
+      - name: Build an unsigned device archive
+        if: github.event_name != 'pull_request'
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project RexRemote.xcodeproj \
+            -scheme RexRemote \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir -p out/Payload
+          cp -R build-device/Build/Products/Release-iphoneos/RexRemote.app out/Payload/
+          rm -rf out/Payload/RexRemote.app/_CodeSignature
+          ditto -c -k --sequesterRsrc --keepParent out/Payload out/RexRemote-unsigned.ipa
+
+      - name: Upload the unsigned IPA
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RexRemote-unsigned-ipa
+          path: out/RexRemote-unsigned.ipa
+          if-no-files-found: error
