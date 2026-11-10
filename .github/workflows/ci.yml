@@ -23,7 +23,7 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Show toolchain
+      - name: Show toolchain and check the SDK
         run: |
           xcodebuild -version
           swift --version
@@ -31,7 +31,11 @@ jobs:
           echo "iOS SDK: $SDK"
           case "$SDK" in
             2[6-9].*|3[0-9].*) ;;
-            *) echo "::error::Rex Remote needs the iOS 26 SDK or newer (Liquid Glass APIs); this runner has $SDK"; exit 1 ;;
+            *)
+              echo "::error::Rex Remote needs the iOS 26 SDK or newer"
+              echo "this runner has $SDK"
+              exit 1
+              ;;
           esac
 
       - name: Install xcodegen
@@ -40,14 +44,19 @@ jobs:
       - name: Generate the Xcode project
         run: xcodegen generate
 
-      - name: Pick a booted-capable iPhone simulator
+      - name: Pick an iPhone simulator
         run: |
-          UDID=$(xcrun simctl list devices available --json \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for rt in sorted(d) for x in d[rt] if x["name"].startswith("iPhone")))')
-          echo "Using simulator $UDID"
-          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices available --json > /tmp/sims.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d = json.load(open("/tmp/sims.json"))["devices"]
+          found = (x["udid"] for rt in sorted(d) for x in d[rt]
+                   if x["name"].startswith("iPhone"))
+          print("SIM_UDID=" + next(found))
+          PY
+          echo "Using simulator $SIM_UDID"
 
-      - name: Unit tests (renderer + terminal core)
+      - name: Unit tests (terminal core + renderer)
         run: |
           set -o pipefail
           xcodebuild test \
@@ -58,10 +67,10 @@ jobs:
             -skipPackagePluginValidation \
             -only-testing:RexRemoteTests \
             CODE_SIGNING_ALLOWED=NO
-        # The UI test is deliberately not run here: it drives a live Rex server,
-        # which CI does not have. See README "Test".
+        # The UI test is not run here on purpose: it drives a live Rex
+        # server, which CI does not have. See README, section "Test".
 
-      - name: Build an unsigned device archive
+      - name: Build an unsigned device build
         if: github.event_name != 'pull_request'
         run: |
           set -o pipefail
@@ -73,11 +82,15 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build-device \
             -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+          APP=build-device/Build/Products/Release-iphoneos/RexRemote.app
           mkdir -p out/Payload
-          cp -R build-device/Build/Products/Release-iphoneos/RexRemote.app out/Payload/
+          cp -R "$APP" out/Payload/
           rm -rf out/Payload/RexRemote.app/_CodeSignature
-          ditto -c -k --sequesterRsrc --keepParent out/Payload out/RexRemote-unsigned.ipa
+          ditto -c -k --sequesterRsrc --keepParent out/Payload \
+            out/RexRemote-unsigned.ipa
 
       - name: Upload the unsigned IPA
         if: github.event_name != 'pull_request'
