@@ -40,6 +40,8 @@ targets:
       properties:
         CFBundleDisplayName: Rex Remote
         UIUserInterfaceStyle: Light
+        NSCameraUsageDescription: Scans the pairing code that `rex server
+          tailscale pair` shows, so the app knows which server to connect to.
         UILaunchScreen:
           UIColorName: ""
         UISupportedInterfaceOrientations:

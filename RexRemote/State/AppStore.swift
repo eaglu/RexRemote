@@ -28,6 +28,7 @@ final class AppStore: ObservableObject {
     private var viewRefreshTask: Task<Void, Never>?
     private var sessionRefreshTask: Task<Void, Never>?
     private var generation = 0
+    private var keepaliveTask: Task<Void, Never>?
 
     var host: HostConfig { hosts.selected ?? .loopback }
 
@@ -50,6 +51,8 @@ final class AppStore: ObservableObject {
         generation += 1
         let token = generation
 
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
         client?.disconnect()
         for controller in controllers.values { controller.stop() }
         controllers.removeAll()
@@ -80,6 +83,7 @@ final class AppStore: ObservableObject {
             guard generation == token else { return }
             applyBootstrap(payload)
             connection = .connected
+            startKeepalive(generation: token)
         } catch {
             guard generation == token else { return }
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -88,7 +92,23 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Cloudflare closes WebSockets that stay quiet for about a minute and the
+    /// server's own ping is every 120s, so a connected app nudges the socket.
+    private func startKeepalive(generation token: Int) {
+        keepaliveTask?.cancel()
+        keepaliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 45_000_000_000)
+                guard let self else { return }
+                guard self.generation == token, self.connection.isConnected else { return }
+                _ = try? await self.client?.call("session.list", nil)
+            }
+        }
+    }
+
     func disconnect() {
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
         generation += 1
         client?.disconnect()
         client = nil

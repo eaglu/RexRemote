@@ -39,10 +39,7 @@ final class RexClient {
     /// Opens the socket and completes once the server's `welcome` arrives.
     func connect() async throws -> JSONObject {
         let url = try host.controlURL()
-        var headers: [(name: String, value: String)] = []
-        if let token = host.token, !token.isEmpty {
-            headers.append((name: "Authorization", value: "Bearer \(token)"))
-        }
+        let headers = host.handshakeHeaders
         socket.onOpen = { [weak self] in
             // The server closes the connection if `hello` does not arrive within 5s.
             self?.sendHello()

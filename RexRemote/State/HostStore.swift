@@ -6,6 +6,10 @@ struct HostConfig: Identifiable, Hashable, Codable {
     var name: String
     var address: String
     var token: String?
+    /// Cloudflare Access service token, used when the server is published
+    /// through a tunnel that sits behind Zero Trust.
+    var accessClientID: String?
+    var accessClientSecret: String?
     /// Claim terminal ownership so the remote pty resizes to fit the phone.
     var autoSize: Bool = true
 
@@ -13,13 +17,47 @@ struct HostConfig: Identifiable, Hashable, Codable {
 
     var displayAddress: String { address }
 
+    /// True when the server is only reachable through Cloudflare Access.
+    var usesAccessToken: Bool {
+        guard let id = accessClientID, let secret = accessClientSecret else { return false }
+        return !id.isEmpty && !secret.isEmpty
+    }
+
+    /// Headers sent on both the control and the data WebSocket handshake.
+    var handshakeHeaders: [(name: String, value: String)] {
+        var headers: [(name: String, value: String)] = []
+        if let token, !token.isEmpty {
+            headers.append((name: "Authorization", value: "Bearer \(token)"))
+        }
+        if let id = accessClientID, let secret = accessClientSecret,
+           !id.isEmpty, !secret.isEmpty {
+            headers.append((name: "CF-Access-Client-Id", value: id))
+            headers.append((name: "CF-Access-Client-Secret", value: secret))
+        }
+        return headers
+    }
+
+
+    /// LAN hosts are written `host:port` and stay plain HTTP; a bare public
+    /// name such as a Cloudflare tunnel (`rex.example.com`) gets TLS, because
+    /// 443 is the only port a tunnel serves.
+    private static func prefersHTTPS(_ text: String) -> Bool {
+        let authority = text.split(separator: "/").first.map(String.init) ?? text
+        let host = authority.split(separator: ":").first.map(String.init) ?? authority
+        let lowercase = host.lowercased()
+        if authority.contains(":") { return false }
+        if lowercase == "localhost" || lowercase.hasSuffix(".local") { return false }
+        if !lowercase.contains(".") { return false }
+        let digitsAndDots = lowercase.allSatisfy { $0.isNumber || $0 == "." }
+        return !digitsAndDots
+    }
+
     /// Normalizes user input such as `mac.local:7297` into a full URL.
     func baseURL() throws -> URL {
         var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw HostError.invalidAddress }
         if !text.contains("://") {
-            let tailnet = text.lowercased().split(separator: "/")[0].contains(".ts.net")
-            text = (tailnet ? "https://" : "http://") + text
+            text = (Self.prefersHTTPS(text) ? "https://" : "http://") + text
         }
         guard var components = URLComponents(string: text) else { throw HostError.invalidAddress }
         if components.port == nil, let scheme = components.scheme?.lowercased(),

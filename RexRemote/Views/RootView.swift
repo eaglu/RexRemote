@@ -24,6 +24,8 @@ struct ConnectView: View {
     @State private var draft: HostConfig = .loopback
     @State private var editingHost: HostConfig?
     @State private var isConnecting = false
+    @State private var isScanning = false
+    @State private var showAccess = false
 
     private var host: HostConfig { store.hosts.selected ?? .loopback }
 
@@ -62,7 +64,21 @@ struct ConnectView: View {
                 .accessibilityIdentifier("hostMenuButton")
             }
         }
-        .onAppear { draft = host }
+        .onAppear {
+            draft = host
+            showAccess = host.usesAccessToken
+        }
+        .sheet(isPresented: $isScanning) {
+            QRScannerSheet(
+                onAddress: { address in
+                    isScanning = false
+                    draft.address = address
+                    if draft.name.isEmpty || draft.name == "This Mac" { draft.name = "Rex Server" }
+                    commitDraft()
+                },
+                onCancel: { isScanning = false }
+            )
+        }
     }
 
     private var header: some View {
@@ -91,13 +107,26 @@ struct ConnectView: View {
     private var card: some View {
         VStack(spacing: 0) {
             field(label: "Server", icon: "server.rack") {
-                TextField("127.0.0.1:7297", text: addressBinding)
-                    .font(RexTheme.mono(13))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .onSubmit { connect() }
-                    .accessibilityIdentifier("serverAddressField")
+                HStack(spacing: 6) {
+                    TextField("127.0.0.1:7297", text: addressBinding)
+                        .font(RexTheme.mono(13))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .onSubmit { connect() }
+                        .accessibilityIdentifier("serverAddressField")
+                    Button {
+                        isScanning = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(RexTheme.ink)
+                            .padding(.leading, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Scan a pairing code")
+                    .accessibilityIdentifier("scanButton")
+                }
             }
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
             field(label: "Token", icon: "key") {
@@ -107,6 +136,8 @@ struct ConnectView: View {
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("tokenField")
             }
+            Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
+            accessRow
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
             HStack(spacing: 10) {
                 Toggle("", isOn: autoSizeBinding)
@@ -125,6 +156,55 @@ struct ConnectView: View {
             .padding(12)
         }
         .rexCard(radius: 12)
+    }
+
+    @ViewBuilder
+    private var accessRow: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { showAccess.toggle() }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 13))
+                    .foregroundStyle(RexTheme.secondaryInk)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cloudflare Access")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(RexTheme.ink)
+                    Text(draft.usesAccessToken ? "Service token saved" : "For servers behind a tunnel")
+                        .font(.caption2)
+                        .foregroundStyle(RexTheme.secondaryInk)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: showAccess ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(RexTheme.secondaryInk)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .accessibilityIdentifier("accessToggleButton")
+
+        if showAccess {
+            Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
+            field(label: "Access ID", icon: "person.badge.key") {
+                TextField("Client ID", text: accessIDBinding)
+                    .font(RexTheme.mono(13))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("accessIDField")
+            }
+            Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
+            field(label: "Access secret", icon: "key.horizontal") {
+                SecureField("Client secret", text: accessSecretBinding)
+                    .font(RexTheme.mono(13))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("accessSecretField")
+            }
+        }
     }
 
     private func field<Content: View>(
@@ -257,6 +337,26 @@ struct ConnectView: View {
         )
     }
 
+    private var accessIDBinding: Binding<String> {
+        Binding(
+            get: { draft.accessClientID ?? "" },
+            set: { newValue in
+                draft.accessClientID = newValue.isEmpty ? nil : newValue
+                commitDraft()
+            }
+        )
+    }
+
+    private var accessSecretBinding: Binding<String> {
+        Binding(
+            get: { draft.accessClientSecret ?? "" },
+            set: { newValue in
+                draft.accessClientSecret = newValue.isEmpty ? nil : newValue
+                commitDraft()
+            }
+        )
+    }
+
     private var autoSizeBinding: Binding<Bool> {
         Binding(
             get: { draft.autoSize },
@@ -300,6 +400,8 @@ struct HostEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var address: String
+    @State private var accessID: String
+    @State private var accessSecret: String
     let host: HostConfig
     let onSave: (HostConfig) -> Void
 
@@ -308,6 +410,8 @@ struct HostEditor: View {
         self.onSave = onSave
         _name = State(initialValue: host.name)
         _address = State(initialValue: host.address)
+        _accessID = State(initialValue: host.accessClientID ?? "")
+        _accessSecret = State(initialValue: host.accessClientSecret ?? "")
     }
 
     var body: some View {
@@ -320,6 +424,18 @@ struct HostEditor: View {
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
                 }
+                Section {
+                    TextField("Client ID", text: $accessID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Client secret", text: $accessSecret)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Cloudflare Access")
+                } footer: {
+                    Text("Only needed when the server is published through a tunnel.")
+                }
             }
             .navigationTitle("Server")
             .toolbar {
@@ -331,6 +447,8 @@ struct HostEditor: View {
                         var updated = host
                         updated.name = name.trimmingCharacters(in: .whitespaces)
                         updated.address = address.trimmingCharacters(in: .whitespaces)
+                        updated.accessClientID = accessID.isEmpty ? nil : accessID
+                        updated.accessClientSecret = accessSecret.isEmpty ? nil : accessSecret
                         onSave(updated)
                         dismiss()
                     }

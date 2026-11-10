@@ -125,6 +125,33 @@ final class RexRemoteUITests: XCTestCase {
         snapshot("10-window-closed")
     }
 
+    /// The pairing sheet has to work on hardware without a camera too, so the
+    /// pasted-address path is what CI and the simulator exercise.
+    func testPairingSheetAcceptsPastedAddress() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-rexHost", serverAddress]
+        app.launch()
+
+        let scan = app.buttons["scanButton"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 20), "scan button missing")
+        scan.tap()
+
+        let field = app.textFields["pairAddressField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "pairing sheet never appeared")
+        snapshot("13-pair-sheet")
+
+        focus(field)
+        field.typeText("rex-abc.tail1234.ts.net")
+        app.buttons["pairUseButton"].tap()
+
+        let address = app.textFields["serverAddressField"]
+        let applied = waitUntil(timeout: 8) {
+            (address.value as? String) == "rex-abc.tail1234.ts.net"
+        }
+        snapshot("14-pair-applied")
+        XCTAssertTrue(applied, "pasted address was not applied: \(String(describing: address.value))")
+    }
+
     /// Taps a text field and lets focus settle; typing into a field that is
     /// still becoming first responder drops the first keystroke.
     private func focus(_ element: XCUIElement) {

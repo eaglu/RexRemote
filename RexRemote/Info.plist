@@ -31,6 +31,8 @@
 	<array>
 		<string>_rex._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Scans the pairing code that `rex server tailscale pair` shows, so the app knows which server to connect to.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Rex Remote connects to your Rex servers on the local network.</string>
 	<key>UIApplicationSceneManifest</key>
