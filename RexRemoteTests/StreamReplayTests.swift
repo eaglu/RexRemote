@@ -116,13 +116,4 @@ final class StreamReplayTests: XCTestCase {
             XCTAssertEqual(parser.directives.count, reference.parser.directives.count, "chunk \(chunk)")
         }
     }
-
-    func testReplayRendersTheShellOutput() throws {
-        let (plain, _) = try replay(chunk: 5)
-        let session = GhosttySession(cols: 61, rows: 49, cellWidthPx: 21, cellHeightPx: 39)
-        XCTAssertNotNil(session)
-        session?.write(plain[...])
-        let screen = session?.plainText() ?? ""
-        XCTAssertTrue(screen.contains("echo replay-1"), screen.debugDescription)
-    }
 }

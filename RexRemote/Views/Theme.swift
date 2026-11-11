@@ -1,3 +1,4 @@
+import GhosttyTerminal
 import SwiftUI
 import UIKit
 
@@ -29,35 +30,32 @@ enum RexTheme {
 
     static let warning = Color(uiColor: UIColor(hex: 0xB4541F))
 
-    /// Fallback terminal colours, used until the server sends the Mac's theme.
-    static let terminalBackground = UIColor(hex: 0xFAF8F3)
-    static let terminalForeground = UIColor(hex: 0x38342E)
-    static let terminalCursor = UIColor(hex: 0x38342E)
-
-    static let terminalPalette: [GhosttySession.RGB] = [
+    /// One Light, as hex strings so libghostty can use them directly.
+    static let terminalPaletteHex: [String] = [
         "#383A42", "#E45649", "#50A14F", "#C18401",
         "#4078F2", "#A626A4", "#0184BC", "#A0A1A7",
         "#696C77", "#DF6C75", "#71B159", "#D0A215",
         "#61AFEF", "#C678DD", "#56B6C2", "#202227"
-    ].compactMap { GhosttySession.RGB(hex: $0) }
+    ]
 
-    static var terminalTheme: GhosttyGridView.Theme {
-        GhosttyGridView.Theme(
-            background: terminalBackground,
-            foreground: terminalForeground,
-            cursor: terminalCursor,
-            palette: terminalPalette.map(uiColor)
-        )
+    /// The terminal defaults the app paints with until the server sends the Mac's
+    /// own theme over the stream.
+    static var ghosttyTheme: TerminalTheme {
+        let configuration = TerminalConfiguration { builder in
+            builder.withBackground("#FAF8F3")
+            builder.withForeground("#38342E")
+            builder.withCursorColor("#38342E")
+            for (index, colour) in terminalPaletteHex.enumerated() {
+                builder.withPalette(index, color: colour)
+            }
+        }
+        return TerminalTheme(light: configuration, dark: configuration)
     }
 
-    static func uiColor(_ rgb: GhosttySession.RGB) -> UIColor {
-        UIColor(
-            red: CGFloat(rgb.red) / 255,
-            green: CGFloat(rgb.green) / 255,
-            blue: CGFloat(rgb.blue) / 255,
-            alpha: 1
-        )
-    }
+    /// Fallback terminal colours, used until the server sends the Mac's theme.
+    static let terminalBackground = UIColor(hex: 0xFAF8F3)
+    static let terminalForeground = UIColor(hex: 0x38342E)
+    static let terminalCursor = UIColor(hex: 0x38342E)
 
     // MARK: - Liquid Glass
 
