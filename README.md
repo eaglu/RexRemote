@@ -15,11 +15,22 @@ Rex Server API, browse sessions and windows, and drive the panes from the phone.
   toolbar; long-press a chip to rename or close that window. The phone follows the server whenever another client
   changes the active window.
 - **Panes** — the layout tree's fractional rects are rendered positionally, so tiled splits look like the Mac's.
-  Focus ring follows `session.focus_block`; per-pane menu splits right/down, closes, and toggles a local zoom.
-- **Terminal** — each pane owns a `data.connect` ticket, a `rex.data.terminal.v1` socket, and a libghostty-vt
-  terminal (`GhosttySession`). A `terminal.format` `vt` dump primes the screen, then live bytes stream in (Ghostty
-  snapshot skipped, APC `resize`/`theme` directives applied). Frames are drawn by our own Core Text renderer
-  (`GhosttyGridView`), and `terminal.write` carries typed input, including keys encoded by libghostty itself.
+  Focus ring follows `session.focus_block`. Dragging the border between two panes sends `session.resize_pane` with
+  the ratio the layout tree reports, so the Mac's split really moves.
+- **Pane menu** — copy/paste, rename, copy working directory, clear scrollback, reset, zoom (`session.zoom_block`),
+  float (`session.float_block`), swap with another pane, move beside another pane, move to another window, split
+  right/down, new pane beside, read the Mac's clipboard, close.
+- **Terminal** — each pane owns a `data.connect` ticket, a `rex.data.terminal.v1` socket, and a libghostty surface
+  from `GhosttyTerminal`'s in-memory backend. A `terminal.format` `vt` dump primes the screen, then live bytes
+  stream in (Ghostty snapshot skipped, APC `resize`/`theme` directives applied). libghostty draws with Metal, so
+  selection, links, mouse reporting and kitty graphics come from Ghostty itself; typed input goes out through
+  `terminal.write` after an 8 ms coalescer keeps the order intact.
+- **Navigation** — the session menu can move focus by direction, step through panes or windows, focus a specific
+  window, create a floating layer, and minimise/raise/lower/close floating layers (`session.focus_*`,
+  `session.new_layer`, `session.set_layer_state`, `session.raise_layer`, `session.lower_layer`, `session.close_layer`).
+- **Session admin** — the session list creates and destroys sessions (`session.create`, `session.close`) and the
+  toolbar's info button opens a sheet built on `server.status`, `server.whoami`, `client.list` and `hosts.*`,
+  including a reachable-hosts list you can add to or prune.
 - **Fit to phone** — with "Resize shells to fit this device" on, the app takes block ownership
   (`session.own_block`) and sends `com.superlogical.terminal.resize` so the pty reflows to the pane.
 - **Input** — compose field (sends a line), key row (esc, tab, ^C, ^D, ^Z, ^L, arrows, `| ~ / -`).

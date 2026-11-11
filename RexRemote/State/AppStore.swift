@@ -460,13 +460,13 @@ final class AppStore: ObservableObject {
 
     // MARK: - Helpers
 
-    private func blockMethod(_ method: String, blockID: String) -> String {
+    func blockMethod(_ method: String, blockID: String) -> String {
         let creator = view?.allBlocks.first { $0.id == blockID }?.creator
         let prefix = creator.flatMap { $0.isEmpty ? nil : $0 } ?? "com.superlogical.terminal"
         return "\(prefix).\(method)"
     }
 
-    private func report(_ error: Error) {
+    func report(_ error: Error) {
         errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
 }

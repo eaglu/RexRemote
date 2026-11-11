@@ -20,6 +20,8 @@ final class TerminalController: NSObject, ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var terminalTitle: String = ""
+    /// The shell's working directory, refreshed after the screen is primed.
+    @Published private(set) var workingDirectory: String = ""
     @Published private(set) var gridSize: String = ""
 
     /// The libghostty session. It exists before the view does so early bytes are
@@ -198,10 +200,24 @@ final class TerminalController: NSObject, ObservableObject {
             primed = true
             flushLiveBuffer()
             openSocket(ticket: ticket)
+            await refreshTitleAndDirectory()
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             phase = .failed(message)
             startTask = nil
+        }
+    }
+
+    /// `pwd` and `title` are block methods, not events, so the header asks for
+    /// them once the pane is live.
+    private func refreshTitleAndDirectory() async {
+        if let payload = await store.terminalInfo("pwd", blockID: blockID),
+           let cwd = payload.string("cwd") ?? payload.string("pwd") {
+            workingDirectory = cwd
+        }
+        if let payload = await store.terminalInfo("title", blockID: blockID),
+           let title = payload.string("title"), !title.isEmpty {
+            terminalTitle = title
         }
     }
 

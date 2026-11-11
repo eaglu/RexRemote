@@ -205,6 +205,8 @@ final class RexRemoteUITests: XCTestCase {
         menu.tap()
 
         XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5), "no Copy in the pane menu")
+        XCTAssertTrue(app.buttons["Rename pane…"].exists, "no rename in the pane menu")
+        XCTAssertTrue(app.buttons["Float pane"].exists, "no float in the pane menu")
         XCTAssertTrue(app.buttons["Paste"].exists, "no Paste in the pane menu")
         snapshot("15-pane-menu")
 
@@ -247,5 +249,25 @@ final class RexRemoteUITests: XCTestCase {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = directory.appendingPathComponent("\(name).png")
         try? screenshot.pngRepresentation.write(to: url)
+    }
+
+    /// The server sheet is the first screen built on `server.status`,
+    /// `client.list` and `hosts.list`.
+    func testServerSheetShowsIdentityAndHosts() throws {
+        let app = launchedApp()
+
+        app.buttons["connectButton"].tap()
+        // The sheet hangs off the session list, not off a pane.
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "dev")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "session list never loaded")
+
+        let info = app.buttons["serverInfoButton"]
+        XCTAssertTrue(info.waitForExistence(timeout: 20), "no server info button")
+        info.tap()
+
+        XCTAssertTrue(app.staticTexts["This server"].waitForExistence(timeout: 10), "no status card")
+        XCTAssertTrue(app.staticTexts["Connected clients"].exists, "no clients card")
+        XCTAssertTrue(app.staticTexts["Other Rex hosts"].exists, "no hosts card")
+        snapshot("16-server-sheet")
     }
 }

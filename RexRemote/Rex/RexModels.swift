@@ -45,6 +45,8 @@ struct WindowInfo: Identifiable {
     let focusedBlockID: String?
     let zoomedBlockID: String?
     let panes: [PanePlacement]
+    let layers: [LayerInfo]
+    let dividers: [SplitDivider]
 
     func pane(id: String?) -> PanePlacement? {
         guard let id else { return nil }
@@ -76,11 +78,27 @@ struct SessionView: Identifiable {
         windows.flatMap { $0.panes.map(\.block) }
     }
 
+    var allDividers: [SplitDivider] {
+        windows.flatMap(\.dividers)
+    }
+
+    /// The divider that separates `blockID` from a neighbour, if the block sits
+    /// in a split at all.
+    func divider(around blockID: String, direction: String?) -> SplitDivider? {
+        guard let window = windows.first(where: { $0.panes.contains { $0.id == blockID } }) else { return nil }
+        return window.dividers.first { divider in
+            (divider.beforeBlockID == blockID || divider.afterBlockID == blockID)
+                && (direction == nil || divider.direction == direction)
+        }
+    }
+
     private static func window(_ json: JSONObject) -> WindowInfo? {
         guard let id = json.string("window_id") else { return nil }
         let layerObjects = json.objects("layers")
         var placed: [(Int, PanePlacement)] = []
         var blocksByID: [String: BlockInfo] = [:]
+        var layers: [LayerInfo] = []
+        var dividers: [SplitDivider] = []
         for (layerIndex, layer) in layerObjects.enumerated() {
             var blocks: [String: BlockInfo] = [:]
             for object in layer.objects("blocks") {
@@ -88,10 +106,20 @@ struct SessionView: Identifiable {
             }
             blocksByID.merge(blocks) { first, _ in first }
             let bounds = Self.rect(layer.doubles("bounds"), fallback: CGRect(x: 0, y: 0, width: 1, height: 1))
+            let layerID = layer.string("layer_id") ?? "layer:\(layerIndex)"
+            layers.append(LayerInfo(
+                id: layerID,
+                windowID: id,
+                kind: layer.string("kind") ?? "tiled",
+                bounds: bounds,
+                state: layer.string("state") ?? "normal",
+                blockIDs: layer.objects("blocks").compactMap { $0.string("block_id") }
+            ))
             guard let layout = layer.object("layout") else { continue }
             for placement in Self.placements(in: layout, bounds: bounds, blocks: blocks) {
                 placed.append((layerIndex, placement))
             }
+            dividers += Self.dividers(in: layout, bounds: bounds, windowID: id, layerID: layerID, blocks: blocks)
         }
         let panes = placed.sorted { $0.0 < $1.0 }.map(\.1)
         return WindowInfo(
@@ -99,8 +127,59 @@ struct SessionView: Identifiable {
             label: json.string("label") ?? id,
             focusedBlockID: json.string("focused_block_id"),
             zoomedBlockID: json.string("zoomed_block_id"),
-            panes: panes
+            panes: panes,
+            layers: layers,
+            dividers: dividers
         )
+    }
+
+    /// Collects every split that has a block on both sides, so the UI can offer
+    /// to drag that border.
+    private static func dividers(
+        in node: JSONObject,
+        bounds: CGRect,
+        windowID: String,
+        layerID: String,
+        blocks: [String: BlockInfo]
+    ) -> [SplitDivider] {
+        var result: [SplitDivider] = []
+        if let split = node.object("split") {
+            let local = rect(node.doubles("rect"), fallback: bounds)
+            let frame = CGRect(
+                x: bounds.minX + local.minX * bounds.width,
+                y: bounds.minY + local.minY * bounds.height,
+                width: local.width * bounds.width,
+                height: local.height * bounds.height
+            )
+            let before = split.object("before").flatMap { blocksUnder($0, blocks: blocks).first }
+            let after = split.object("after").flatMap { blocksUnder($0, blocks: blocks).first }
+            if let before, let after, let splitID = split.string("split_id") {
+                result.append(SplitDivider(
+                    id: splitID,
+                    windowID: windowID,
+                    layerID: layerID,
+                    direction: split.string("direction") ?? "horizontal",
+                    ratio: split.double("ratio") ?? 0.5,
+                    rect: frame,
+                    beforeBlockID: before,
+                    afterBlockID: after
+                ))
+            }
+            for side in ["before", "after"] {
+                if let child = split.object(side) {
+                    result += dividers(in: child, bounds: bounds, windowID: windowID, layerID: layerID, blocks: blocks)
+                }
+            }
+        }
+        return result
+    }
+
+    private static func blocksUnder(_ node: JSONObject, blocks: [String: BlockInfo]) -> [String] {
+        if let blockID = node.string("block_id") { return blocks[blockID] == nil ? [] : [blockID] }
+        guard let split = node.object("split") else { return [] }
+        return ["before", "after"].flatMap { side in
+            split.object(side).map { blocksUnder($0, blocks: blocks) } ?? []
+        }
     }
 
     /// Walks the layout tree. Every node's rect is relative to its layer's bounds.

@@ -16,6 +16,9 @@ struct SessionScreen: View {
     @State private var showKeys = true
     @State private var renamingWindowID: String?
     @State private var renameText = ""
+    @State private var renamingBlockID: String?
+    @State private var blockRenameText = ""
+    @State private var notice: String?
     @Namespace private var tabNamespace
 
     private var view: SessionView? { store.view }
@@ -27,8 +30,15 @@ struct SessionScreen: View {
         return view.activeWindow
     }
 
+    /// The server's zoom is the truth; the local one only covers servers too old
+    /// to report it.
+    private var zoomedBlockID: String? {
+        if let zoomed = window?.zoomedBlockID { return zoomed }
+        return store.localZoomBlockID
+    }
+
     private var focusedBlockID: String? {
-        if let zoomed = store.localZoomBlockID,
+        if let zoomed = zoomedBlockID,
            window?.panes.contains(where: { $0.id == zoomed }) == true { return zoomed }
         if let focused = store.focusedBlockID, window?.panes.contains(where: { $0.id == focused }) == true {
             return focused
@@ -73,6 +83,36 @@ struct SessionScreen: View {
         .task {
             await store.openSession(session.id)
             if store.focusedBlockID == nil { store.focusedBlockID = window?.focusedBlockID }
+        }
+        .alert("Rename pane", isPresented: Binding(
+            get: { renamingBlockID != nil },
+            set: { if !$0 { renamingBlockID = nil } }
+        )) {
+            TextField("Pane label", text: $blockRenameText)
+            Button("Cancel", role: .cancel) { renamingBlockID = nil }
+            Button("Rename") {
+                if let id = renamingBlockID {
+                    let label = blockRenameText
+                    Task { await store.renameBlock(id, label: label) }
+                }
+                renamingBlockID = nil
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let notice {
+                Text(notice)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(RexTheme.chipInk)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(RexTheme.chip.opacity(0.92), in: .capsule)
+                    .padding(.bottom, 132)
+                    .transition(.opacity)
+                    .task(id: notice) {
+                        try? await Task.sleep(nanoseconds: 1_800_000_000)
+                        withAnimation { self.notice = nil }
+                    }
+            }
         }
     }
 
@@ -129,6 +169,45 @@ struct SessionScreen: View {
                                 }
                                 Button("Close window", role: .destructive) {
                                     Task { await store.closeWindow(window.id) }
+                                }
+                            }
+                            Divider()
+                            Menu("Move focus") {
+                                Button("Left") { Task { await store.focusDirection("left") } }
+                                Button("Right") { Task { await store.focusDirection("right") } }
+                                Button("Up") { Task { await store.focusDirection("up") } }
+                                Button("Down") { Task { await store.focusDirection("down") } }
+                                Divider()
+                                Button("Next pane") { Task { await store.focusStep(forward: true, pane: true) } }
+                                Button("Previous pane") { Task { await store.focusStep(forward: false, pane: true) } }
+                                Button("Next window") { Task { await store.focusStep(forward: true, pane: false) } }
+                                Button("Previous window") { Task { await store.focusStep(forward: false, pane: false) } }
+                            }
+                            if let view, view.windows.count > 1 {
+                                Menu("Focus window") {
+                                    ForEach(view.windows) { candidate in
+                                        Button(candidate.label) {
+                                            Task { await store.focusWindow(candidate.id) }
+                                        }
+                                    }
+                                }
+                            }
+                            Divider()
+                            Button("New floating layer") { Task { await store.newFloatingLayer() } }
+                            if let floating = window?.floatingLayers, !floating.isEmpty {
+                                Menu("Floating layers") {
+                                    ForEach(floating) { layer in
+                                        Button(layer.isMinimized ? "Restore \(layer.id.suffix(6))" : "Minimize \(layer.id.suffix(6))") {
+                                            Task {
+                                                await store.setLayerState(layer.id, state: layer.isMinimized ? "normal" : "minimized")
+                                            }
+                                        }
+                                        Button("Raise") { Task { await store.raiseLayer(layer.id) } }
+                                        Button("Lower") { Task { await store.lowerLayer(layer.id) } }
+                                        Button("Close layer", role: .destructive) {
+                                            Task { await store.closeLayer(layer.id) }
+                                        }
+                                    }
                                 }
                             }
                             Divider()
@@ -241,7 +320,7 @@ struct SessionScreen: View {
         GeometryReader { geometry in
             if let view, let window {
                 let panes: [PanePlacement] = {
-                    if let zoomed = store.localZoomBlockID,
+                    if let zoomed = zoomedBlockID,
                        let match = window.panes.first(where: { $0.id == zoomed }) {
                         return [match]
                     }
@@ -254,11 +333,28 @@ struct SessionScreen: View {
                             sessionID: view.id,
                             placement: placement,
                             isFocused: placement.id == focusedBlockID,
-                            isZoomed: store.localZoomBlockID == placement.id,
-                            keepKeyboard: !composeFocused
+                            isZoomed: zoomedBlockID == placement.id,
+                            keepKeyboard: !composeFocused,
+                            onRenamePane: { pane in
+                                renamingBlockID = pane.block.id
+                                blockRenameText = pane.block.label
+                            },
+                            onNotice: { message in withAnimation { notice = message } }
                         )
                         .frame(width: frame.width, height: frame.height)
                         .offset(x: frame.minX, y: frame.minY)
+                    }
+                    if panes.count > 1 {
+                        ForEach(window.dividers) { divider in
+                            SplitHandle(
+                                divider: divider,
+                                size: geometry.size,
+                                isActive: divider.beforeBlockID == focusedBlockID
+                                    || divider.afterBlockID == focusedBlockID
+                            ) { ratio in
+                                Task { await store.resizeSplit(divider, ratio: ratio) }
+                            }
+                        }
                     }
                     if panes.isEmpty {
                         emptyWindow
@@ -388,172 +484,5 @@ struct SessionScreen: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(RexTheme.strip)
-    }
-}
-
-/// One pane: chrome plus the live terminal. The store owns the controller, so
-/// this view only looks it up; `PaneContent` observes it so phase and title
-/// changes redraw immediately.
-struct PaneContainer: View {
-    @EnvironmentObject private var store: AppStore
-    let sessionID: String
-    let placement: PanePlacement
-    let isFocused: Bool
-    let isZoomed: Bool
-    /// False while the compose field owns the keyboard.
-    let keepKeyboard: Bool
-
-    var body: some View {
-        PaneContent(
-            controller: store.controller(sessionID: sessionID, blockID: placement.block.id),
-            placement: placement,
-            isFocused: isFocused,
-            keepKeyboard: keepKeyboard,
-            isZoomed: isZoomed
-        )
-    }
-}
-
-struct PaneContent: View {
-    @EnvironmentObject private var store: AppStore
-    @ObservedObject var controller: TerminalController
-    let placement: PanePlacement
-    let isFocused: Bool
-    let keepKeyboard: Bool
-    let isZoomed: Bool
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            // The terminal fills the slot via an overlay so its UIKit view can
-            // never propose a size larger than the pane and ride over the header.
-            GeometryReader { proxy in
-                // The grid is sized explicitly: a bare UIViewRepresentable has no
-                // intrinsic size and SwiftUI would centre an oversized view, which
-                // cuts the first column off against the card edge.
-                Color.clear
-                    .overlay(alignment: .topLeading) {
-                        TerminalSurface(controller: controller, keepKeyboard: keepKeyboard)
-                            .frame(
-                                width: max(1, proxy.size.width - 4),
-                                height: max(1, proxy.size.height)
-                            )
-                            .offset(x: 2)
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        statusOverlay
-                    }
-            }
-        }
-        .background(RexTheme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    isFocused ? RexTheme.mintDeep.opacity(0.55) : RexTheme.hairline,
-                    lineWidth: isFocused ? 1.2 : 0.8
-                )
-        )
-    }
-
-    private var header: some View {
-        HStack(spacing: 5) {
-            Text(">_")
-                .font(RexTheme.mono(12, weight: .bold))
-                .foregroundStyle(isFocused ? RexTheme.mintDeep : RexTheme.secondaryInk.opacity(0.55))
-            Text(placement.block.label)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(isFocused ? RexTheme.ink : RexTheme.secondaryInk)
-                .lineLimit(1)
-                .layoutPriority(1)
-            Text(controller.terminalTitle.isEmpty ? "~" : controller.terminalTitle)
-                .font(RexTheme.mono(11))
-                .foregroundStyle(RexTheme.secondaryInk.opacity(0.8))
-                .lineLimit(1)
-                .layoutPriority(0.5)
-            Spacer(minLength: 2)
-            Button {
-                Task { await store.focus(blockID: placement.block.id) }
-            } label: {
-                Image(systemName: "scope")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 26, height: 30)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("focusPaneButton")
-            Button {
-                store.toggleZoom(blockID: placement.block.id)
-            } label: {
-                Image(systemName: isZoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 26, height: 30)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("zoomPaneButton")
-            Menu {
-                Button("Copy") {
-                    store.copySelection(blockID: placement.block.id)
-                }
-                Button("Paste") {
-                    store.pasteClipboard(blockID: placement.block.id)
-                }
-                Divider()
-                Button("Split right") {
-                    Task { await store.split(blockID: placement.block.id, direction: "horizontal") }
-                }
-                Button("Split down") {
-                    Task { await store.split(blockID: placement.block.id, direction: "vertical") }
-                }
-                Divider()
-                Button("Close pane", role: .destructive) {
-                    Task { await store.closeBlock(placement.block.id) }
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 26, height: 30)
-            }
-            .accessibilityIdentifier("paneMenuButton")
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 32)
-        .background(RexTheme.card)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(RexTheme.hairline).frame(height: 0.8)
-        }
-        .onTapGesture {
-            Task { await store.focus(blockID: placement.block.id) }
-        }
-    }
-
-    @ViewBuilder
-    private var statusOverlay: some View {
-        switch controller.phase {
-        case .failed(let reason):
-            HStack(spacing: 6) {
-                Image(systemName: "wifi.exclamationmark")
-                Text(reason).lineLimit(2)
-            }
-            .font(.caption2)
-            .foregroundStyle(RexTheme.warning)
-            .padding(6)
-            .background(RexTheme.card.opacity(0.92), in: RoundedRectangle(cornerRadius: 6))
-            .padding(6)
-        case .priming:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.mini).tint(RexTheme.secondaryInk)
-                Text("Opening stream…")
-            }
-            .font(.caption2)
-            .foregroundStyle(RexTheme.secondaryInk)
-            .padding(6)
-            .background(RexTheme.card.opacity(0.92), in: RoundedRectangle(cornerRadius: 6))
-            .padding(6)
-        case .idle, .live:
-            EmptyView()
-        }
     }
 }

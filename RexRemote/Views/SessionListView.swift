@@ -5,6 +5,9 @@ struct SessionListView: View {
     @State private var selected: SessionRef?
     @State private var renaming: SessionRef?
     @State private var newLabel: String = ""
+    @State private var showServer = false
+    @State private var creatingSession = false
+    @State private var newSessionLabel = ""
 
     var body: some View {
         ScrollView {
@@ -40,6 +43,13 @@ struct SessionListView: View {
                             .foregroundStyle(RexTheme.ink)
                     }
                     .accessibilityIdentifier("refreshSessionsButton")
+                    Button {
+                        showServer = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(RexTheme.ink)
+                    }
+                    .accessibilityIdentifier("serverInfoButton")
                 }
             }
         }
@@ -51,6 +61,23 @@ struct SessionListView: View {
         }
         .navigationDestination(item: $selected) { session in
             SessionScreen(session: session)
+        }
+        .sheet(isPresented: $showServer) {
+            ServerSheet(store: store)
+        }
+        .alert("New session", isPresented: $creatingSession) {
+            TextField("Label", text: $newSessionLabel)
+            Button("Cancel", role: .cancel) { newSessionLabel = "" }
+            Button("Create") {
+                let label = newSessionLabel.trimmingCharacters(in: .whitespaces)
+                newSessionLabel = ""
+                Task {
+                    guard let id = await store.createSession(label: label.isEmpty ? "phone" : label) else { return }
+                    if let created = store.sessions.first(where: { $0.id == id }) {
+                        selected = created
+                    }
+                }
+            }
         }
         .alert("Rename session", isPresented: Binding(
             get: { renaming != nil },
@@ -145,6 +172,29 @@ struct SessionListView: View {
                 ForEach(store.sessions) { session in
                     row(session)
                 }
+                Button {
+                    creatingSession = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(RexTheme.mintDeep)
+                        Text("New session")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(RexTheme.ink)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RexTheme.card, in: .rect(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(RexTheme.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("newSessionButton")
             }
         }
     }
@@ -181,6 +231,16 @@ struct SessionListView: View {
             Button("Rename session…") {
                 renaming = session
                 newLabel = session.label
+            }
+            Button("Destroy session", role: .destructive) {
+                Task { await store.destroySession(session.id) }
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                Task { await store.destroySession(session.id) }
+            } label: {
+                Label("Destroy", systemImage: "trash")
             }
         }
     }
