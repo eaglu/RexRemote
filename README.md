@@ -171,9 +171,9 @@ pill is baked into the artwork — so the icon keeps it verbatim rather than inv
 that were explored live in `Design/` (`icon-official-web.png`, `icon-official-mac.png`, `dino-*.png` drafts,
 `icon-candidates.png` contact sheet).
 
-## Renderer (branch `ghosttykit`)
+## Renderer (libghostty)
 
-This branch swaps the hand-written grid for **libghostty** through
+Panes are drawn by **libghostty** through
 [`lakr233/libghostty-spm`](https://github.com/lakr233/libghostty-spm) (MIT,
 prebuilt XCFramework, no Zig needed):
 
@@ -205,9 +205,9 @@ shell's behaviour, not the app's — vim and less rely on it.
 | | |
 |---|---|
 | ![Connect](shots/01-connect.png) | ![Sessions](shots/02-sessions.png) |
-| ![Split window](shots/03-session.png) | ![Typed input](shots/04-after-input.png) |
-| ![New window](shots/06-new-window.png) | ![Split from the phone](shots/07-split-right.png) |
-| ![Zoomed pane](shots/09-zoom-input.png) | ![Window closed again](shots/10-window-closed.png) |
+| ![Split window](shots/ghostty-03-session.png) | ![Typed input](shots/ghostty-04-typed.png) |
+| ![Pane menu](shots/ghostty-06-pane-menu.png) | ![New window](shots/06-new-window.png) |
+| ![Split from the phone](shots/07-split-right.png) | ![Zoomed pane](shots/09-zoom-input.png) |
 
 ## Notes and limits
 
