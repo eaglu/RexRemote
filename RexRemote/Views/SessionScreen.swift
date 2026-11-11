@@ -7,6 +7,8 @@ import SwiftUI
 /// white cards whose header mimics Rex's `>_ zsh ~` row.
 struct SessionScreen: View {
     let session: SessionRef
+    /// Matches the card this screen zoomed out of.
+    let zoomNamespace: Namespace.ID
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: AppStore
     @State private var selectedWindowID: String?
@@ -20,6 +22,13 @@ struct SessionScreen: View {
     @State private var blockRenameText = ""
     @State private var notice: String?
     @Namespace private var tabNamespace
+
+    /// What the canvas is showing, independent of live resizes: a change here
+    /// (new split, zoom, other window) animates, a drag does not.
+    private var paneSignature: String {
+        let ids = (view?.activeWindow?.panes ?? []).map(\.id).joined(separator: ",")
+        return "\(selectedWindowID ?? "")|\(zoomedBlockID ?? "")|\(ids)"
+    }
 
     private var view: SessionView? { store.view }
     private var window: WindowInfo? {
@@ -60,6 +69,7 @@ struct SessionScreen: View {
         }
         .background(RexTheme.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .navigationTransition(.zoom(sourceID: session.id, in: zoomNamespace))
         .onChange(of: view?.activeWindowID) { _, _ in
             // Follow the server when it switches windows (new window, or a tab
             // change made on the Mac); the local override only outlives a tap
@@ -107,7 +117,7 @@ struct SessionScreen: View {
                     .padding(.vertical, 9)
                     .background(RexTheme.chip.opacity(0.92), in: .capsule)
                     .padding(.bottom, 132)
-                    .transition(.opacity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                     .task(id: notice) {
                         try? await Task.sleep(nanoseconds: 1_800_000_000)
                         withAnimation { self.notice = nil }
@@ -343,6 +353,9 @@ struct SessionScreen: View {
                         )
                         .frame(width: frame.width, height: frame.height)
                         .offset(x: frame.minX, y: frame.minY)
+                        .transition(
+                            .opacity.combined(with: .scale(scale: 0.97, anchor: .center))
+                        )
                     }
                     if panes.count > 1 {
                         ForEach(window.dividers) { divider in

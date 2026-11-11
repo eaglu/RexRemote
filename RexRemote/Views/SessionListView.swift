@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SessionListView: View {
     @EnvironmentObject private var store: AppStore
+    let zoomNamespace: Namespace.ID
     @State private var selected: SessionRef?
     @State private var renaming: SessionRef?
     @State private var newLabel: String = ""
@@ -60,7 +61,7 @@ struct SessionListView: View {
             await store.refreshSessions()
         }
         .navigationDestination(item: $selected) { session in
-            SessionScreen(session: session)
+            SessionScreen(session: session, zoomNamespace: zoomNamespace)
         }
         .sheet(isPresented: $showServer) {
             ServerSheet(store: store)
@@ -225,6 +226,7 @@ struct SessionListView: View {
             .rexCard(radius: 12)
         }
         .buttonStyle(.plain)
+        .matchedTransitionSource(id: session.id, in: zoomNamespace)
         .accessibilityLabel(session.label)
         .accessibilityIdentifier("sessionRow")
         .contextMenu {

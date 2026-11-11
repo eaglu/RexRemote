@@ -20,6 +20,10 @@ struct TerminalSurface: UIViewRepresentable {
             context: .window
         )
         view.delegate = context.coordinator
+        // The app has its own key row above the keyboard; Ghostty's accessory
+        // row would be a second, redundant one. An empty list makes
+        // `inputAccessoryView` nil.
+        view.inputAccessoryItems = []
         controller.attach(view)
         return view
     }
