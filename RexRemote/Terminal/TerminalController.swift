@@ -168,7 +168,10 @@ final class TerminalController: NSObject, ObservableObject {
         pendingInput.append(contentsOf: bytes)
         guard inputFlushTask == nil else { return }
         inputFlushTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000)
+            // Yield instead of sleeping: a burst that lands in the same runloop
+            // tick (paste, IME commit) still goes out as one write, but a single
+            // keystroke does not pay a timer on the way to the wire.
+            await Task.yield()
             guard let self else { return }
             // Drain everything that piled up, one write at a time. The task stays
             // non-nil until the queue is empty, so a keystroke arriving mid-write
