@@ -362,10 +362,8 @@ final class TerminalController: NSObject, ObservableObject {
             }
         }
         let theme = TerminalTheme(light: configuration, dark: configuration)
-        NSLog("REXDBG theme fg=%@ bg=%@ palette=%d", foreground, background, palette.count)
         Task { @MainActor in
-            let ok = GhosttyTerminal.TerminalController.shared.setTheme(theme)
-            NSLog("REXDBG setTheme -> %@", ok ? "ok" : "no-change")
+            _ = GhosttyTerminal.TerminalController.shared.setTheme(theme)
         }
     }
 
