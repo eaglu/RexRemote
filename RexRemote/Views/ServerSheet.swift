@@ -127,9 +127,6 @@ struct ServerSheet: View {
                         fact("up since", started)
                     }
                 }
-                if let hostID = info.hostID {
-                    fact("host", String(hostID.prefix(8)), mono: true)
-                }
             } else {
                 Text("server.status unavailable on this server.")
                     .font(.footnote)
@@ -141,13 +138,13 @@ struct ServerSheet: View {
         .rexCard()
     }
 
-    private func fact(_ label: String, _ value: String, mono: Bool = false) -> some View {
+    private func fact(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(RexTheme.secondaryInk)
             Text(value)
-                .font(mono ? RexTheme.mono(12, weight: .medium) : .system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(RexTheme.ink)
         }
     }
