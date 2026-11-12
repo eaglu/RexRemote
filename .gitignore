@@ -9,6 +9,7 @@ xcuserdata/
 
 # Generated project (regenerate with `xcodegen generate`)
 RexRemote.xcodeproj/
+RexRemote*.xcodeproj/
 
 # Swift Package Manager
 .swiftpm/

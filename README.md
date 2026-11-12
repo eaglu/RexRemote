@@ -70,7 +70,7 @@ xcodebuild -project RexRemote.xcodeproj -scheme RexRemote \
 `-skipPackagePluginValidation` is needed because the pinned dependencies ship build-tool plugins that Xcode would
 otherwise ask you to trust interactively.
 
-Requires iOS 18+, Xcode 26+ (Swift 6 toolchain, Swift 5 language mode).
+Requires iOS 26+, Xcode 26+ (Swift 6 toolchain, Swift 5 language mode).
 
 ## Run against a server
 
