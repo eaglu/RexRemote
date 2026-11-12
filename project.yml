@@ -33,8 +33,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.faye.RexRemote
         PRODUCT_NAME: RexRemote
-        MARKETING_VERSION: "0.1"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         SUPPORTS_MACCATALYST: NO
@@ -44,6 +44,10 @@ targets:
       path: RexRemote/Info.plist
       properties:
         CFBundleDisplayName: Rex Remote
+        # Without these the plist keeps xcodegen's literal 1.0/1 and
+        # MARKETING_VERSION never reaches the bundle.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSCameraUsageDescription: Scans the pairing code that `rex server
           tailscale pair` shows, so the app knows which server to connect to.
         UILaunchScreen:
