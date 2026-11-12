@@ -3,7 +3,7 @@ import Foundation
 // Everything the phone never called before: layout surgery, keyboard
 // navigation, session administration, server introspection and the terminal
 // block methods. The UI stays thin — it asks for one of these.
-extension AppStore {
+extension SessionViewModel {
     // MARK: - Layout
 
     /// Drag a border. `ratio` is the share the block before the border keeps.
@@ -175,45 +175,6 @@ extension AppStore {
     }
 
     // MARK: - Server and hosts
-
-    func loadServerInfo() async -> ServerInfo? {
-        guard let payload = await perform("server.status", [:]) else { return nil }
-        return ServerInfo(payload)
-    }
-
-    func loadWhoAmI() async -> String? {
-        guard let payload = await perform("server.whoami", [:]) else { return nil }
-        let principal = payload.object("principal")
-        // `{principal: {kind, transport, display, remote_addr}, account}` —
-        // the raw JSON is not something to show a person.
-        let who = principal?.string("display") ?? principal?.string("kind") ?? "unknown"
-        let transport = principal?.string("transport")
-        let account = payload.string("account")
-        return [who, transport, account]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-            .joined(separator: " · ")
-    }
-
-    func loadClients() async -> [ClientInfo] {
-        guard let payload = await perform("client.list", [:]) else { return [] }
-        return payload.objects("clients").compactMap(ClientInfo.init)
-    }
-
-    func loadHosts() async -> [RemoteHost] {
-        guard let payload = await perform("hosts.list", [:]) else { return [] }
-        return payload.objects("hosts").compactMap(RemoteHost.init)
-    }
-
-    func addHost(label: String, endpoint: String) async {
-        await perform("hosts.put", [
-            "host": ["label": label, "endpoints": [endpoint]]
-        ])
-    }
-
-    func removeHost(_ id: String) async {
-        await perform("hosts.remove", ["id": id])
-    }
 
     // MARK: - Terminal block methods
 

@@ -28,8 +28,9 @@ final class RexClient {
     var onEvent: ((JSONObject) -> Void)?
     var onDisconnect: ((String?) -> Void)?
 
-    init(host: HostConfig) {
+    init(host: HostConfig, reconnectToken: String? = nil) {
         self.host = host
+        self.reconnectToken = reconnectToken
     }
 
     var isConnected: Bool { socket.isOpen }

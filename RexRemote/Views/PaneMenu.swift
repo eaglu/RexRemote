@@ -7,7 +7,7 @@ import UIKit
 /// things that fix a broken pane (clear, reset), then layout moves, then the
 /// destructive one last.
 struct PaneMenu: View {
-    @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var store: SessionViewModel
 
     let blockID: String
     let siblings: [PanePlacement]

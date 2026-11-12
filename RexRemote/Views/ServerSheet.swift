@@ -4,7 +4,7 @@ import SwiftUI
 /// Rex hosts it can reach. Everything here comes from methods the app never
 /// called before (`server.status`, `server.whoami`, `client.list`, `hosts.*`).
 struct ServerSheet: View {
-    @ObservedObject var store: AppStore
+    @ObservedObject var connection: ConnectionStore
 
     @Environment(\.dismiss) private var dismiss
 
@@ -63,14 +63,14 @@ struct ServerSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 7) {
             sectionLabel("This server")
-            Text(store.host.address)
+            Text(connection.host.address)
                 .font(RexTheme.mono(17, weight: .semibold))
                 .foregroundStyle(RexTheme.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if let whoami {
                 Text(whoami)
-                    .font(.system(size: 12))
+                    .font(RexTheme.text(.footnote))
                     .foregroundStyle(RexTheme.secondaryInk)
                     .lineLimit(1)
             }
@@ -99,13 +99,13 @@ struct ServerSheet: View {
     private func statPill(_ symbol: String, value: String, unit: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(RexTheme.text(.caption2, weight: .semibold))
                 .foregroundStyle(RexTheme.secondaryInk)
             Text(value)
-                .font(.system(size: 12, weight: .semibold))
+                .font(RexTheme.text(.footnote, weight: .semibold))
                 .foregroundStyle(RexTheme.ink)
             Text(unit)
-                .font(.system(size: 11))
+                .font(RexTheme.text(.caption))
                 .foregroundStyle(RexTheme.secondaryInk)
         }
         .padding(.horizontal, 9)
@@ -141,10 +141,10 @@ struct ServerSheet: View {
     private func fact(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(RexTheme.text(.caption2, weight: .medium))
                 .foregroundStyle(RexTheme.secondaryInk)
             Text(value)
-                .font(.system(size: 12, weight: .medium))
+                .font(RexTheme.text(.footnote, weight: .medium))
                 .foregroundStyle(RexTheme.ink)
         }
     }
@@ -170,7 +170,7 @@ struct ServerSheet: View {
             sectionLabel("Connected clients")
             if clients.isEmpty {
                 Text("None reported.")
-                    .font(.system(size: 12))
+                    .font(RexTheme.text(.footnote))
                     .foregroundStyle(RexTheme.secondaryInk)
             }
             ForEach(clients) { client in
@@ -181,12 +181,12 @@ struct ServerSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(clientName(client))
-                                .font(.system(size: 13, weight: .medium))
+                                .font(RexTheme.text(.subheadline, weight: .medium))
                                 .foregroundStyle(RexTheme.ink)
                                 .lineLimit(1)
                             if isUs(client) {
                                 Text("this phone")
-                                    .font(.system(size: 9, weight: .semibold))
+                                    .font(RexTheme.text(.caption2, weight: .semibold))
                                     .foregroundStyle(RexTheme.chipInk)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -201,7 +201,7 @@ struct ServerSheet: View {
                     Spacer(minLength: 0)
                     if client.isResumed {
                         Text("resumed")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(RexTheme.text(.caption2, weight: .medium))
                             .foregroundStyle(RexTheme.mintDeep)
                     }
                 }
@@ -213,7 +213,7 @@ struct ServerSheet: View {
     }
 
     private func isUs(_ client: ClientInfo) -> Bool {
-        store.client?.clientID == client.id
+        connection.client?.clientID == client.id
     }
 
     /// `client:01a1c804-…` is not a name; the tail of the id is enough to tell
@@ -238,14 +238,14 @@ struct ServerSheet: View {
             sectionLabel("Other Rex hosts")
             if hosts.isEmpty {
                 Text("This server reaches no other hosts.")
-                    .font(.system(size: 12))
+                    .font(RexTheme.text(.footnote))
                     .foregroundStyle(RexTheme.secondaryInk)
             }
             ForEach(hosts) { host in
                 HStack(spacing: 9) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(host.label)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(RexTheme.text(.subheadline, weight: .medium))
                             .foregroundStyle(RexTheme.ink)
                         Text(host.endpoints.first ?? host.id)
                             .font(RexTheme.mono(10.5))
@@ -255,12 +255,12 @@ struct ServerSheet: View {
                     Spacer(minLength: 0)
                     Button {
                         Task {
-                            await store.removeHost(host.id)
+                            await connection.removeHost(host.id)
                             await reloadHosts()
                         }
                     } label: {
                         Image(systemName: "minus.circle")
-                            .font(.system(size: 15))
+                            .font(RexTheme.text(.callout))
                             .foregroundStyle(RexTheme.secondaryInk)
                     }
                     .buttonStyle(.plain)
@@ -284,14 +284,14 @@ struct ServerSheet: View {
                 let endpoint = newEndpoint.trimmingCharacters(in: .whitespaces)
                 guard !label.isEmpty, !endpoint.isEmpty else { return }
                 Task {
-                    await store.addHost(label: label, endpoint: endpoint)
+                    await connection.addHost(label: label, endpoint: endpoint)
                     newLabel = ""
                     newEndpoint = ""
                     await reloadHosts()
                 }
             } label: {
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(RexTheme.text(.footnote, weight: .bold))
                     .foregroundStyle(RexTheme.mint)
                     .frame(width: 30, height: 30)
                     .background(RexTheme.chip, in: .circle)
@@ -326,7 +326,7 @@ struct ServerSheet: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(RexTheme.text(.caption, weight: .semibold))
             .textCase(.uppercase)
             .tracking(0.6)
             .foregroundStyle(RexTheme.secondaryInk)
@@ -334,10 +334,10 @@ struct ServerSheet: View {
 
     private func reload() async {
         isLoading = true
-        async let status = store.loadServerInfo()
-        async let me = store.loadWhoAmI()
-        async let peers = store.loadClients()
-        async let remotes = store.loadHosts()
+        async let status = connection.loadServerInfo()
+        async let me = connection.loadWhoAmI()
+        async let peers = connection.loadClients()
+        async let remotes = connection.loadHosts()
         info = await status
         whoami = await me
         clients = await peers
@@ -346,6 +346,6 @@ struct ServerSheet: View {
     }
 
     private func reloadHosts() async {
-        hosts = await store.loadHosts()
+        hosts = await connection.loadHosts()
     }
 }

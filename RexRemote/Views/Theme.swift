@@ -109,12 +109,19 @@ enum RexTheme {
         .system(style, design: .monospaced, weight: weight)
     }
 
-    /// Terminal point size follows the reader's text setting, clamped so the
-    /// grid stays usable: below 9pt the columns stop matching, above 20pt a
-    /// phone shows fewer than 20 columns.
-    static var terminalFontSize: Float {
-        let scaled = UIFontMetrics(forTextStyle: .body).scaledValue(for: 11)
-        return Float(min(max(scaled, 9), 20))
+    /// The reader can override the grid size with A−/A+ or a pinch; the
+    /// default follows their text setting.
+    static let minimumTerminalFontSize: Float = 9
+    static let maximumTerminalFontSize: Float = 28
+    static let defaultTerminalFontSize: Float = 12
+    static let terminalFontSizeKey = "rex.terminal.fontSize"
+
+    /// Terminal point size follows the reader's text setting until they pick
+    /// one, clamped so the grid stays usable.
+    static var preferredTerminalFontSize: Float {
+        let base = CGFloat(defaultTerminalFontSize)
+        let scaled = Float(UIFontMetrics(forTextStyle: .body).scaledValue(for: base))
+        return min(max(scaled, minimumTerminalFontSize), maximumTerminalFontSize)
     }
 }
 

@@ -4,7 +4,7 @@ import SwiftUI
 /// this view only looks it up; `PaneContent` observes it so phase and title
 /// changes redraw immediately.
 struct PaneContainer: View {
-    @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var store: SessionViewModel
     let sessionID: String
     let placement: PanePlacement
     let isFocused: Bool
@@ -28,7 +28,7 @@ struct PaneContainer: View {
 }
 
 struct PaneContent: View {
-    @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var store: SessionViewModel
     @ObservedObject var controller: TerminalController
     let placement: PanePlacement
     let isFocused: Bool

@@ -16,7 +16,7 @@ final class TerminalController: NSObject, ObservableObject {
 
     let sessionID: String
     let blockID: String
-    private unowned let store: AppStore
+    private unowned let store: SessionViewModel
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var terminalTitle: String = ""
@@ -45,7 +45,7 @@ final class TerminalController: NSObject, ObservableObject {
     private var lastRequestedGrid: (cols: Int, rows: Int) = (0, 0)
     private var themeApplied = false
 
-    init(sessionID: String, blockID: String, store: AppStore) {
+    init(sessionID: String, blockID: String, store: SessionViewModel) {
         self.sessionID = sessionID
         self.blockID = blockID
         self.store = store

@@ -9,33 +9,44 @@ enum ConnectionState: Equatable {
     var isConnected: Bool { self == .connected }
 }
 
-/// App-wide Rex state: one control connection, the session list, the session
-/// being viewed, and one terminal controller per visible block.
+/// Sessions, windows and panes: the session list, the one being viewed, focus,
+/// zoom, and one terminal controller per visible block.
+///
+/// It holds no socket of its own — `ConnectionStore` owns that, and calls back
+/// when a connection starts or dies.
 @MainActor
-final class AppStore: ObservableObject {
-    let hosts = HostStore()
+final class SessionViewModel: ObservableObject {
+    private let connection: ConnectionStore
 
-    @Published private(set) var client: RexClient?
-    @Published private(set) var connection: ConnectionState = .disconnected(nil)
+    init(connection: ConnectionStore) {
+        self.connection = connection
+    }
+
+    /// Aliases onto the connection so the session code reads as it did when it
+    /// owned the socket.
+    var client: RexClient? { connection.client }
+    var errorMessage: String? {
+        get { connection.errorMessage }
+        set { connection.errorMessage = newValue }
+    }
+    var host: HostConfig { connection.host }
+    var shouldOwnTerminalSizing: Bool { connection.shouldOwnTerminalSizing }
+
+
     @Published private(set) var sessions: [SessionRef] = []
     @Published private(set) var serverRevision: String = ""
     @Published private(set) var view: SessionView?
     @Published var currentSessionID: String?
-    @Published var errorMessage: String?
     @Published var focusedBlockID: String?
     @Published var localZoomBlockID: String?
 
     private var controllers: [String: TerminalController] = [:]
     private var viewRefreshTask: Task<Void, Never>?
     private var sessionRefreshTask: Task<Void, Never>?
-    private var generation = 0
-    private var keepaliveTask: Task<Void, Never>?
 
-    var host: HostConfig { hosts.selected ?? .loopback }
 
     var activeWindow: WindowInfo? { view?.activeWindow }
 
-    var shouldOwnTerminalSizing: Bool { host.autoSize }
 
     func controller(sessionID: String, blockID: String) -> TerminalController {
         if let existing = controllers[blockID] { return existing }
@@ -60,78 +71,7 @@ final class AppStore: ObservableObject {
 
     // MARK: - Connection
 
-    func connect() async {
-        generation += 1
-        let token = generation
-
-        keepaliveTask?.cancel()
-        keepaliveTask = nil
-        client?.disconnect()
-        for controller in controllers.values { controller.stop() }
-        controllers.removeAll()
-        view = nil
-        sessions = []
-        focusedBlockID = nil
-        currentSessionID = nil
-        errorMessage = nil
-        connection = .connecting
-
-        let host = self.host
-        let client = RexClient(host: host)
-        self.client = client
-        client.onEvent = { [weak self] event in
-            guard let self, self.generation == token else { return }
-            self.handle(envelope: event)
-        }
-        client.onDisconnect = { [weak self] reason in
-            guard let self, self.generation == token else { return }
-            self.connection = .disconnected(reason)
-        }
-
-        do {
-            _ = try await client.connect()
-            guard generation == token else { return }
-            serverRevision = "api \(RexProtocol.apiRevision)"
-            let payload = try await client.call("session.bootstrap", ["event_scope": "all"])
-            guard generation == token else { return }
-            applyBootstrap(payload)
-            connection = .connected
-            startKeepalive(generation: token)
-        } catch {
-            guard generation == token else { return }
-            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            connection = .disconnected(message)
-            errorMessage = message
-        }
-    }
-
-    /// Cloudflare closes WebSockets that stay quiet for about a minute and the
-    /// server's own ping is every 120s, so a connected app nudges the socket.
-    private func startKeepalive(generation token: Int) {
-        keepaliveTask?.cancel()
-        keepaliveTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 45_000_000_000)
-                guard let self else { return }
-                guard self.generation == token, self.connection.isConnected else { return }
-                _ = try? await self.client?.call("session.list", nil)
-            }
-        }
-    }
-
-    func disconnect() {
-        keepaliveTask?.cancel()
-        keepaliveTask = nil
-        generation += 1
-        client?.disconnect()
-        client = nil
-        connection = .disconnected(nil)
-        for controller in controllers.values { controller.stop() }
-        controllers.removeAll()
-        view = nil
-    }
-
-    private func applyBootstrap(_ payload: JSONObject) {
+    func applyBootstrap(_ payload: JSONObject) {
         let attachAll = payload.object("attach_all")
         let list = attachAll?.objects("sessions") ?? []
         sessions = list.compactMap(SessionRef.init)
@@ -149,6 +89,24 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: - Sessions and views
+
+    /// A new socket is about to be opened: drop everything tied to the old one.
+    func resetForNewConnection() {
+        for controller in controllers.values { controller.stop() }
+        controllers.removeAll()
+        view = nil
+        sessions = []
+        focusedBlockID = nil
+        currentSessionID = nil
+    }
+
+    /// The socket went away: keep the session list (it is still useful for the
+    /// reconnect banner) but stop drawing panes from it.
+    func resetForDisconnect() {
+        for controller in controllers.values { controller.stop() }
+        controllers.removeAll()
+        view = nil
+    }
 
     func openSession(_ sessionID: String) async {
         guard let client else { return }
@@ -203,7 +161,7 @@ final class AppStore: ObservableObject {
         }
     }
 
-    private func handle(envelope: JSONObject) {
+    func handle(envelope: JSONObject) {
         let payload = envelope.object("payload") ?? [:]
         switch payload.string("type") {
         case "session_event":
@@ -364,10 +322,8 @@ final class AppStore: ObservableObject {
 
     // MARK: - Terminal plumbing
 
-    func authHeaders() -> [(name: String, value: String)] {
-        guard let token = host.token, !token.isEmpty else { return [] }
-        return [(name: "Authorization", value: "Bearer \(token)")]
-    }
+    /// Data sockets authenticate the same way the control socket does.
+    func authHeaders() -> [(name: String, value: String)] { connection.authHeaders() }
 
     func requestTerminalTicket(sessionID: String, blockID: String) async throws -> String {
         guard let client else { throw RexError(code: "closed", message: "Not connected") }

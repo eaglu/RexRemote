@@ -4,10 +4,17 @@ import UIKit
 
 @main
 struct RexRemoteApp: App {
-    @StateObject private var store = AppStore()
+    @StateObject private var connection = ConnectionStore()
+    @StateObject private var sessions: SessionViewModel
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        let connection = ConnectionStore()
+        let sessions = SessionViewModel(connection: connection)
+        connection.attach(sessions: sessions)
+        _connection = StateObject(wrappedValue: connection)
+        _sessions = StateObject(wrappedValue: sessions)
+
         // libghostty keeps one app-wide configuration, so the Rex palette goes in
         // before the first surface is created; a `theme` directive from the
         // server replaces it later.
@@ -17,16 +24,17 @@ struct RexRemoteApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environmentObject(store)
+                .environmentObject(connection)
+                .environmentObject(sessions)
         }
         .onChange(of: scenePhase) { _ in
             guard scenePhase == .active else { return }
-            switch store.connection {
+            switch connection.connection {
             case .connected:
-                Task { await store.refreshView() }
+                Task { await sessions.refreshView() }
             case .disconnected, .connecting:
-                if !store.host.address.isEmpty, store.connection != .connecting {
-                    Task { await store.connect() }
+                if !connection.host.address.isEmpty, connection.connection != .connecting {
+                    Task { await connection.connect() }
                 }
             }
         }

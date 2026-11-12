@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct SessionListView: View {
-    @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var connection: ConnectionStore
+    @EnvironmentObject private var store: SessionViewModel
     let zoomNamespace: Namespace.ID
     @State private var selected: SessionRef?
     @State private var renaming: SessionRef?
@@ -28,7 +29,7 @@ struct SessionListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    store.disconnect()
+                    connection.disconnect()
                 } label: {
                     Image(systemName: "bolt.slash")
                         .foregroundStyle(RexTheme.ink)
@@ -64,7 +65,7 @@ struct SessionListView: View {
             SessionScreen(session: session, zoomNamespace: zoomNamespace)
         }
         .sheet(isPresented: $showServer) {
-            ServerSheet(store: store)
+            ServerSheet(connection: connection)
         }
         .alert("New session", isPresented: $creatingSession) {
             TextField("Label", text: $newSessionLabel)
@@ -178,10 +179,10 @@ struct SessionListView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 15))
+                            .font(RexTheme.text(.callout))
                             .foregroundStyle(RexTheme.mintDeep)
                         Text("New session")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(RexTheme.text(.subheadline, weight: .medium))
                             .foregroundStyle(RexTheme.ink)
                         Spacer(minLength: 0)
                     }
@@ -210,7 +211,7 @@ struct SessionListView: View {
                     .foregroundStyle(session.id == store.currentSessionID ? RexTheme.mintDeep : RexTheme.secondaryInk.opacity(0.6))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.label)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(RexTheme.text(.subheadline, weight: .medium))
                         .foregroundStyle(RexTheme.ink)
                     Text(shortID(session.id))
                         .font(RexTheme.mono(10))
@@ -218,7 +219,7 @@ struct SessionListView: View {
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(RexTheme.text(.caption, weight: .semibold))
                     .foregroundStyle(RexTheme.secondaryInk.opacity(0.6))
             }
             .padding(12)

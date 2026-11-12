@@ -4,13 +4,16 @@ import SwiftUI
 ///
 /// The chrome follows Rex on the Mac: a warm paper page, one capsule holding the
 /// tabs, the active tab as a dark chip with the mint `>_` glyph, and panes as
-/// white cards whose header mimics Rex's `>_ zsh ~` row.
+/// white cards whose header mimics Rex's `>_ zsh ~` row. The chrome itself lives
+/// in `SessionChrome`, `WindowTabStrip` and `InputDock`; this view owns the
+/// state and the geometry.
 struct SessionScreen: View {
     let session: SessionRef
     /// Matches the card this screen zoomed out of.
     let zoomNamespace: Namespace.ID
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var connection: ConnectionStore
+    @EnvironmentObject private var store: SessionViewModel
     @State private var selectedWindowID: String?
     @State private var composeText = ""
     /// Tracks the compose field so the panes stop pulling the keyboard back.
@@ -22,6 +25,8 @@ struct SessionScreen: View {
     @State private var blockRenameText = ""
     @State private var notice: String?
     @Namespace private var tabNamespace
+    @AppStorage(RexTheme.terminalFontSizeKey) private var terminalFontSize =
+        Double(RexTheme.preferredTerminalFontSize)
 
     /// What the canvas is showing, independent of live resizes: a change here
     /// (new split, zoom, other window) animates, a drag does not.
@@ -59,15 +64,46 @@ struct SessionScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            topBar
-            tabStrip
+            SessionChrome(
+                title: view?.label ?? session.label,
+                currentSessionID: view?.id ?? session.id,
+                window: window,
+                onBack: { dismiss() },
+                onRefresh: { Task { await store.refreshView() } },
+                onRenameWindow: { candidate in
+                    renamingWindowID = candidate.id
+                    renameText = candidate.label
+                },
+                onSwitchSession: switchSession(to:),
+                onAllSessions: { dismiss() }
+            )
+            WindowTabStrip(
+                windows: windowTabs,
+                activeWindowID: window?.id,
+                namespace: tabNamespace,
+                onSelect: select(window:),
+                onNew: { Task { await store.newWindow() } },
+                onRename: { candidate in
+                    renamingWindowID = candidate.id
+                    renameText = candidate.label
+                },
+                onClose: { candidate in Task { await store.closeWindow(candidate.id) } }
+            )
             canvas
-            if case .disconnected(let reason) = store.connection {
-                offlineBanner(reason)
-            } else if let message = store.errorMessage {
-                banner(message)
-            }
-            bottomBar
+            connectionBanner
+            InputDock(
+                controller: focusedController,
+                prompt: focusedPane.map { "Type to \($0.block.label)…" },
+                canSend: canSend,
+                composeText: $composeText,
+                composeFocus: $composeFocused,
+                showKeys: $showKeys,
+                fontSize: Binding(
+                    get: { Float(terminalFontSize) },
+                    set: { terminalFontSize = Double($0) }
+                ),
+                onSend: sendCompose
+            )
         }
         .background(RexTheme.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -93,10 +129,6 @@ struct SessionScreen: View {
                 renamingWindowID = nil
             }
         }
-        .task {
-            await store.openSession(session.id)
-            if store.focusedBlockID == nil { store.focusedBlockID = window?.focusedBlockID }
-        }
         .alert("Rename pane", isPresented: Binding(
             get: { renamingBlockID != nil },
             set: { if !$0 { renamingBlockID = nil } }
@@ -111,10 +143,14 @@ struct SessionScreen: View {
                 renamingBlockID = nil
             }
         }
+        .task {
+            await store.openSession(session.id)
+            if store.focusedBlockID == nil { store.focusedBlockID = window?.focusedBlockID }
+        }
         .overlay(alignment: .bottom) {
             if let notice {
                 Text(notice)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(RexTheme.text(.footnote, weight: .medium))
                     .foregroundStyle(RexTheme.chipInk)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -129,203 +165,23 @@ struct SessionScreen: View {
         }
     }
 
-    // MARK: - Top bar
-
-    /// Rex keeps its chrome floating above the terminal; on iOS that becomes
-    /// three glass islands (back, the session label, the action cluster) instead
-    /// of a full-width bar, so the paper stays visible between them.
-    private var topBar: some View {
-        GlassEffectContainer(spacing: 10) {
-            // The label is centred against the screen, not against the two
-            // clusters, so a narrow action strip is what actually centres it.
-            ZStack {
-                Text(view?.label ?? session.label)
-                    .font(RexTheme.text(.headline, weight: .semibold))
-                    .foregroundStyle(RexTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .glassEffect(RexTheme.glass(), in: .capsule)
-                    .padding(.horizontal, 74)
-
-                HStack(spacing: 10) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(RexTheme.ink)
-                            .frame(width: 44, height: 44)
-                            .glassEffect(RexTheme.glass(interactive: true), in: .circle)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Back to sessions")
-                    .accessibilityIdentifier("backButton")
-
-                    Spacer(minLength: 0)
-
-                    // New window lives on the tab strip, so the top bar keeps
-                    // only the two things that have nowhere else to go.
-                    HStack(spacing: 0) {
-                        Button {
-                            Task { await store.refreshView() }
-                        } label: {
-                            glyph("arrow.clockwise")
-                        }
-                        .accessibilityLabel("Refresh")
-                        .accessibilityIdentifier("refreshButton")
-                        Menu {
-                            Button("New window") { Task { await store.newWindow() } }
-                            if let window {
-                                Button("Rename window…") {
-                                    renamingWindowID = window.id
-                                    renameText = window.label
-                                }
-                                Button("Close window", role: .destructive) {
-                                    Task { await store.closeWindow(window.id) }
-                                }
-                            }
-                            Divider()
-                            Menu("Move focus") {
-                                Button("Left") { Task { await store.focusDirection("left") } }
-                                Button("Right") { Task { await store.focusDirection("right") } }
-                                Button("Up") { Task { await store.focusDirection("up") } }
-                                Button("Down") { Task { await store.focusDirection("down") } }
-                                Divider()
-                                Button("Next pane") { Task { await store.focusStep(forward: true, pane: true) } }
-                                Button("Previous pane") { Task { await store.focusStep(forward: false, pane: true) } }
-                                Button("Next window") { Task { await store.focusStep(forward: true, pane: false) } }
-                                Button("Previous window") { Task { await store.focusStep(forward: false, pane: false) } }
-                            }
-                            if let view, view.windows.count > 1 {
-                                Menu("Focus window") {
-                                    ForEach(view.windows) { candidate in
-                                        Button(candidate.label) {
-                                            Task { await store.focusWindow(candidate.id) }
-                                        }
-                                    }
-                                }
-                            }
-                            Divider()
-                            Button("New floating layer") { Task { await store.newFloatingLayer() } }
-                            if let floating = window?.floatingLayers, !floating.isEmpty {
-                                Menu("Floating layers") {
-                                    ForEach(floating) { layer in
-                                        Button(layer.isMinimized ? "Restore \(layer.id.suffix(6))" : "Minimize \(layer.id.suffix(6))") {
-                                            Task {
-                                                await store.setLayerState(layer.id, state: layer.isMinimized ? "normal" : "minimized")
-                                            }
-                                        }
-                                        Button("Raise") { Task { await store.raiseLayer(layer.id) } }
-                                        Button("Lower") { Task { await store.lowerLayer(layer.id) } }
-                                        Button("Close layer", role: .destructive) {
-                                            Task { await store.closeLayer(layer.id) }
-                                        }
-                                    }
-                                }
-                            }
-                            Divider()
-                            Button("Disconnect", role: .destructive) { store.disconnect() }
-                        } label: {
-                            glyph("ellipsis")
-                        }
-                        .accessibilityLabel("Session actions")
-                        .accessibilityIdentifier("sessionMenuButton")
-                    }
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 3)
-                    .glassEffect(RexTheme.glass(), in: .capsule)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
-    }
-
-    private func glyph(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(RexTheme.text(.body, weight: .medium))
-            .foregroundStyle(RexTheme.ink)
-            .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
-            .contentShape(Rectangle())
-    }
-
-    // MARK: - Window tabs
+    // MARK: - State changes
 
     private var windowTabs: [WindowInfo] { view?.windows ?? [] }
 
-    private var tabStrip: some View {
-        GlassEffectContainer(spacing: 6) {
-            HStack(spacing: 6) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(windowTabs) { candidate in
-                            tab(candidate, isActive: candidate.id == window?.id)
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                }
-
-                Button {
-                    Task { await store.newWindow() }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(RexTheme.ink)
-                        .frame(width: 44, height: 44)
-                        .glassEffect(RexTheme.glass(interactive: true), in: .circle)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("newWindowChip")
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
+    private func switchSession(to id: String) {
+        guard id != (view?.id ?? session.id) else { return }
+        selectedWindowID = nil
+        store.localZoomBlockID = nil
+        composeText = ""
+        Task { await store.openSession(id) }
     }
 
-    private func tab(_ candidate: WindowInfo, isActive: Bool) -> some View {
-        Button {
-            selectedWindowID = candidate.id
-            store.localZoomBlockID = nil
-            if let blockID = candidate.focusedBlockID ?? candidate.panes.first?.id {
-                Task { await store.focus(blockID: blockID) }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(">_")
-                    .font(RexTheme.mono(13, weight: .bold))
-                    .foregroundStyle(isActive ? RexTheme.mint : RexTheme.secondaryInk.opacity(0.7))
-                Text(candidate.label)
-                    .font(RexTheme.text(.subheadline, weight: isActive ? .semibold : .regular))
-                    .foregroundStyle(isActive ? RexTheme.chipInk : RexTheme.secondaryInk)
-                    .lineLimit(1)
-                Text("\(candidate.panes.count)")
-                    .font(RexTheme.monoText(.caption2))
-                    .foregroundStyle(isActive ? RexTheme.chipInk.opacity(0.6) : RexTheme.secondaryInk.opacity(0.7))
-            }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 9)
-            .glassEffect(
-                isActive
-                    ? RexTheme.glass(RexTheme.chipGlass.opacity(0.92), interactive: true)
-                    : RexTheme.glass(interactive: true),
-                in: .capsule
-            )
-            .glassEffectID(candidate.id, in: tabNamespace)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(candidate.label) window, \(candidate.panes.count) panes")
-        .accessibilityIdentifier("windowTab-\(candidate.label)")
-        .contextMenu {
-            Button("Rename window…") {
-                renamingWindowID = candidate.id
-                renameText = candidate.label
-            }
-            Button("Close window", role: .destructive) {
-                Task { await store.closeWindow(candidate.id) }
-            }
+    private func select(window candidate: WindowInfo) {
+        selectedWindowID = candidate.id
+        store.localZoomBlockID = nil
+        if let blockID = candidate.focusedBlockID ?? candidate.panes.first?.id {
+            Task { await store.focus(blockID: blockID) }
         }
     }
 
@@ -392,7 +248,10 @@ struct SessionScreen: View {
 
     private var emptyWindow: some View {
         VStack(spacing: 8) {
-            Text(">_").font(RexTheme.mono(22, weight: .bold)).foregroundStyle(RexTheme.secondaryInk.opacity(0.5))
+            Text(">_")
+                .font(RexTheme.mono(22, weight: .bold))
+                .foregroundStyle(RexTheme.secondaryInk.opacity(0.5))
+                .accessibilityHidden(true)
             Text("No panes")
                 .font(RexTheme.text(.subheadline, weight: .semibold))
                 .foregroundStyle(RexTheme.ink)
@@ -423,68 +282,26 @@ struct SessionScreen: View {
         )
     }
 
-    // MARK: - Input
+    // MARK: - Connection state
 
-    private var bottomBar: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(RexTheme.hairline)
-                .frame(height: 0.8)
-            if showKeys {
-                KeyBar(controller: focusedController)
-            }
-            HStack(spacing: 8) {
-                Button {
-                    showKeys.toggle()
-                } label: {
-                    Image(systemName: showKeys ? "keyboard.chevron.compact.down" : "keyboard")
-                        .font(RexTheme.text(.body))
-                        .foregroundStyle(RexTheme.secondaryInk)
-                        .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(showKeys ? "Hide key row" : "Show key row")
-                .accessibilityIdentifier("toggleKeysButton")
-
-                TextField(
-                    focusedPane.map { "Type to \($0.block.label)…" } ?? "No pane focused",
-                    text: $composeText
-                )
-                .font(RexTheme.monoText(.body))
-                .focused($composeFocused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.send)
-                .onSubmit { sendCompose() }
-                .disabled(focusedBlockID == nil)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 11)
-                .glassEffect(RexTheme.glass(), in: .capsule)
-                .accessibilityIdentifier("composeField")
-
-                Button(action: sendCompose) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(canSend ? RexTheme.mint : RexTheme.chipInk.opacity(0.4))
-                        .frame(width: 44, height: 44)
-                        .glassEffect(
-                            canSend
-                                ? RexTheme.glass(RexTheme.chipGlass.opacity(0.95), interactive: true)
-                                : RexTheme.glass(),
-                            in: .circle
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .accessibilityLabel("Send")
-                .accessibilityIdentifier("sendButton")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+    @ViewBuilder
+    private var connectionBanner: some View {
+        if case .disconnected(let reason) = connection.connection {
+            ConnectionBanner(
+                kind: .offline(reason),
+                onReconnect: { Task { await connection.connect() } },
+                onDismiss: {}
+            )
+        } else if let message = connection.errorMessage {
+            ConnectionBanner(
+                kind: .error(message),
+                onReconnect: {},
+                onDismiss: { connection.errorMessage = nil }
+            )
         }
-        .background(RexTheme.paper.opacity(0.55))
     }
+
+    // MARK: - Input
 
     private var focusedController: TerminalController {
         store.controller(sessionID: view?.id ?? session.id, blockID: focusedBlockID ?? "")
@@ -499,55 +316,5 @@ struct SessionScreen: View {
         Task {
             await store.write(text + "\r", sessionID: sessionID, blockID: blockID)
         }
-    }
-
-    /// A dropped connection is a state, not an event: it stays on screen with
-    /// the action that fixes it, instead of the dismissible error strip.
-    private func offlineBanner(_ reason: String?) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bolt.horizontal.circle")
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Disconnected")
-                    .font(RexTheme.text(.footnote, weight: .semibold))
-                Text(reason ?? "The server stopped responding.")
-                    .font(.caption2)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 4)
-            Button("Reconnect") {
-                Task { await store.connect() }
-            }
-            .font(RexTheme.text(.footnote, weight: .semibold))
-            .foregroundStyle(RexTheme.ink)
-            .padding(.horizontal, 12)
-            .frame(minHeight: RexTheme.tapTarget)
-            .accessibilityIdentifier("reconnectButton")
-        }
-        .foregroundStyle(RexTheme.warning)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(RexTheme.strip)
-    }
-
-    private func banner(_ message: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-            Text(message).font(.footnote).lineLimit(3)
-            Spacer()
-            Button {
-                store.errorMessage = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption)
-                    .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .foregroundStyle(RexTheme.warning)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(RexTheme.strip)
     }
 }
