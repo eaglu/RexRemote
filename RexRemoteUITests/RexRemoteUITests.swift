@@ -97,10 +97,12 @@ final class RexRemoteUITests: XCTestCase {
                        "compose field lost a keystroke before sending")
         app.buttons["sendButton"].tap()
 
-        // 5. A key from the key bar reaches the pty. Deliberately not `esc`: a
+        // 5. A key from the key bar reaches the pty. `^A` rather than `esc`: a
         // lone ESC stays pending as a meta prefix in the shell, so the next
-        // character typed (even in a later run) is swallowed.
-        let clearKey = app.buttons["key-ctrl-l"]
+        // character typed (even in a later run) is swallowed. It is also the
+        // first key on screen — the row scrolls, so later keys have no hit
+        // point until it is scrolled.
+        let clearKey = app.buttons["key-ctrl-a"]
         if clearKey.waitForExistence(timeout: 5) {
             clearKey.tap()
         }
