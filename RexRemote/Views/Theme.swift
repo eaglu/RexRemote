@@ -8,27 +8,40 @@ import UIKit
 /// charcoal chips for the active tab, and a mint glyph as the one loud accent.
 /// The terminal keeps Rex's own colours, delivered by the server with the stream.
 enum RexTheme {
-    /// Window chrome / page background.
-    static let paper = Color(uiColor: UIColor(hex: 0xFBF9F1))
-    /// Cards, tab strip, panes.
-    static let card = Color(uiColor: UIColor(hex: 0xFFFEFA))
-    /// Capsule that holds the tabs, and other sunken areas.
-    static let strip = Color(uiColor: UIColor(hex: 0xF1EDE2))
-    /// Slightly stronger fill for pressed or secondary chips.
-    static let fill = Color(uiColor: UIColor(hex: 0xE8E3D6))
+    /// HIG minimum hit target. Every control that is not a full-width row uses
+    /// at least this, even when the glyph inside is smaller.
+    static let tapTarget: CGFloat = 44
 
-    static let ink = Color(uiColor: UIColor(hex: 0x2F2A24))
-    static let secondaryInk = Color(uiColor: UIColor(hex: 0x797066))
-    static let hairline = Color(uiColor: UIColor(hex: 0xE6E3DA))
+    /// Light is Rex's own palette; dark keeps the same warm cast instead of
+    /// falling back to a neutral grey, so the app still looks like Rex after
+    /// sunset.
+    static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+        })
+    }
+
+    /// Window chrome / page background.
+    static let paper = dynamic(0xFBF9F1, 0x161412)
+    /// Cards, tab strip, panes.
+    static let card = dynamic(0xFFFEFA, 0x211E1A)
+    /// Capsule that holds the tabs, and other sunken areas.
+    static let strip = dynamic(0xF1EDE2, 0x2A2621)
+    /// Slightly stronger fill for pressed or secondary chips.
+    static let fill = dynamic(0xE8E3D6, 0x35302A)
+
+    static let ink = dynamic(0x2F2A24, 0xF2EEE4)
+    static let secondaryInk = dynamic(0x797066, 0xA69C8D)
+    static let hairline = dynamic(0xE6E3DA, 0x3C372F)
 
     /// Dark chip used by the active tab and by primary buttons.
-    static let chip = Color(uiColor: UIColor(hex: 0x292B2F))
-    static let chipInk = Color(uiColor: UIColor(hex: 0xF3F1EA))
+    static let chip = dynamic(0x292B2F, 0x3A3530)
+    static let chipInk = dynamic(0xF3F1EA, 0xF4EFE4)
     /// The `>_` glyph — mint on chips, deep green on paper.
-    static let mint = Color(uiColor: UIColor(hex: 0x88E987))
-    static let mintDeep = Color(uiColor: UIColor(hex: 0x3F8A4B))
+    static let mint = dynamic(0x88E987, 0x8FE98D)
+    static let mintDeep = dynamic(0x3F8A4B, 0x82DA8F)
 
-    static let warning = Color(uiColor: UIColor(hex: 0xB4541F))
+    static let warning = dynamic(0xB4541F, 0xFFA071)
 
     /// One Light, as hex strings so libghostty can use them directly.
     static let terminalPaletteHex: [String] = [
@@ -41,21 +54,28 @@ enum RexTheme {
     /// The terminal defaults the app paints with until the server sends the Mac's
     /// own theme over the stream.
     static var ghosttyTheme: TerminalTheme {
-        let configuration = TerminalConfiguration { builder in
-            builder.withBackground("#FAF8F3")
-            builder.withForeground("#38342E")
-            builder.withCursorColor("#38342E")
+        TerminalTheme(light: terminalConfiguration(dark: false), dark: terminalConfiguration(dark: true))
+    }
+
+    private static func terminalConfiguration(dark: Bool) -> TerminalConfiguration {
+        TerminalConfiguration { builder in
+            builder.withBackground(dark ? "#1B1815" : "#FAF8F3")
+            builder.withForeground(dark ? "#E7E1D5" : "#38342E")
+            builder.withCursorColor(dark ? "#E7E1D5" : "#38342E")
             for (index, colour) in terminalPaletteHex.enumerated() {
                 builder.withPalette(index, color: colour)
             }
         }
-        return TerminalTheme(light: configuration, dark: configuration)
     }
 
     /// Fallback terminal colours, used until the server sends the Mac's theme.
-    static let terminalBackground = UIColor(hex: 0xFAF8F3)
-    static let terminalForeground = UIColor(hex: 0x38342E)
-    static let terminalCursor = UIColor(hex: 0x38342E)
+    static let terminalBackground = UIColor { traits in
+        UIColor(hex: traits.userInterfaceStyle == .dark ? 0x1B1815 : 0xFAF8F3)
+    }
+    static let terminalForeground = UIColor { traits in
+        UIColor(hex: traits.userInterfaceStyle == .dark ? 0xE7E1D5 : 0x38342E)
+    }
+    static let terminalCursor = terminalForeground
 
     // MARK: - Liquid Glass
 
@@ -74,8 +94,27 @@ enum RexTheme {
     }
 
     /// Monospaced helpers so header glyphs line up with the terminal grid.
+    /// The explicit size is for glyphs whose box is fixed (the `>_` mark); body
+    /// text goes through ``monoText`` so Dynamic Type still reaches it.
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
+    }
+
+    /// Dynamic Type scale for every piece of chrome text.
+    static func text(_ style: Font.TextStyle = .footnote, weight: Font.Weight = .regular) -> Font {
+        .system(style, weight: weight)
+    }
+
+    static func monoText(_ style: Font.TextStyle = .caption, weight: Font.Weight = .regular) -> Font {
+        .system(style, design: .monospaced, weight: weight)
+    }
+
+    /// Terminal point size follows the reader's text setting, clamped so the
+    /// grid stays usable: below 9pt the columns stop matching, above 20pt a
+    /// phone shows fewer than 20 columns.
+    static var terminalFontSize: Float {
+        let scaled = UIFontMetrics(forTextStyle: .body).scaledValue(for: 11)
+        return Float(min(max(scaled, 9), 20))
     }
 }
 

@@ -62,13 +62,16 @@ struct SessionScreen: View {
             topBar
             tabStrip
             canvas
-            if let message = store.errorMessage {
+            if case .disconnected(let reason) = store.connection {
+                offlineBanner(reason)
+            } else if let message = store.errorMessage {
                 banner(message)
             }
             bottomBar
         }
         .background(RexTheme.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .background(InteractivePopGesture().frame(width: 0, height: 0))
         .navigationTransition(.zoom(sourceID: session.id, in: zoomNamespace))
         .onChange(of: view?.activeWindowID) { _, _ in
             // Follow the server when it switches windows (new window, or a tab
@@ -137,7 +140,7 @@ struct SessionScreen: View {
             // clusters, so a narrow action strip is what actually centres it.
             ZStack {
                 Text(view?.label ?? session.label)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(RexTheme.text(.headline, weight: .semibold))
                     .foregroundStyle(RexTheme.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -157,6 +160,7 @@ struct SessionScreen: View {
                             .glassEffect(RexTheme.glass(interactive: true), in: .circle)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Back to sessions")
                     .accessibilityIdentifier("backButton")
 
                     Spacer(minLength: 0)
@@ -169,6 +173,7 @@ struct SessionScreen: View {
                         } label: {
                             glyph("arrow.clockwise")
                         }
+                        .accessibilityLabel("Refresh")
                         .accessibilityIdentifier("refreshButton")
                         Menu {
                             Button("New window") { Task { await store.newWindow() } }
@@ -225,6 +230,7 @@ struct SessionScreen: View {
                         } label: {
                             glyph("ellipsis")
                         }
+                        .accessibilityLabel("Session actions")
                         .accessibilityIdentifier("sessionMenuButton")
                     }
                     .padding(.horizontal, 3)
@@ -240,9 +246,9 @@ struct SessionScreen: View {
 
     private func glyph(_ name: String) -> some View {
         Image(systemName: name)
-            .font(.system(size: 17, weight: .medium))
+            .font(RexTheme.text(.body, weight: .medium))
             .foregroundStyle(RexTheme.ink)
-            .frame(width: 40, height: 42)
+            .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
             .contentShape(Rectangle())
     }
 
@@ -292,11 +298,11 @@ struct SessionScreen: View {
                     .font(RexTheme.mono(13, weight: .bold))
                     .foregroundStyle(isActive ? RexTheme.mint : RexTheme.secondaryInk.opacity(0.7))
                 Text(candidate.label)
-                    .font(.system(size: 14, weight: isActive ? .semibold : .regular))
+                    .font(RexTheme.text(.subheadline, weight: isActive ? .semibold : .regular))
                     .foregroundStyle(isActive ? RexTheme.chipInk : RexTheme.secondaryInk)
                     .lineLimit(1)
                 Text("\(candidate.panes.count)")
-                    .font(RexTheme.mono(11))
+                    .font(RexTheme.monoText(.caption2))
                     .foregroundStyle(isActive ? RexTheme.chipInk.opacity(0.6) : RexTheme.secondaryInk.opacity(0.7))
             }
             .padding(.horizontal, 13)
@@ -387,12 +393,23 @@ struct SessionScreen: View {
     private var emptyWindow: some View {
         VStack(spacing: 8) {
             Text(">_").font(RexTheme.mono(22, weight: .bold)).foregroundStyle(RexTheme.secondaryInk.opacity(0.5))
-            Text("No panes").font(.system(size: 14, weight: .semibold)).foregroundStyle(RexTheme.ink)
-            Text("This window has no blocks. Create one from Rex on your Mac.")
-                .font(.footnote)
+            Text("No panes")
+                .font(RexTheme.text(.subheadline, weight: .semibold))
+                .foregroundStyle(RexTheme.ink)
+            Text("This window has no blocks. Create one here or from Rex on your Mac.")
+                .font(RexTheme.text(.footnote))
                 .foregroundStyle(RexTheme.secondaryInk)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+            Button("New pane") {
+                Task { await store.createBlock() }
+            }
+            .font(RexTheme.text(.footnote, weight: .semibold))
+            .padding(.horizontal, 16)
+            .frame(minHeight: RexTheme.tapTarget)
+            .foregroundStyle(RexTheme.ink)
+            .rexCard(fill: RexTheme.strip)
+            .padding(.top, 2)
         }
     }
 
@@ -421,18 +438,20 @@ struct SessionScreen: View {
                     showKeys.toggle()
                 } label: {
                     Image(systemName: showKeys ? "keyboard.chevron.compact.down" : "keyboard")
-                        .font(.system(size: 17))
+                        .font(RexTheme.text(.body))
                         .foregroundStyle(RexTheme.secondaryInk)
-                        .frame(width: 40, height: 40)
+                        .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(showKeys ? "Hide key row" : "Show key row")
                 .accessibilityIdentifier("toggleKeysButton")
 
                 TextField(
                     focusedPane.map { "Type to \($0.block.label)…" } ?? "No pane focused",
                     text: $composeText
                 )
-                .font(RexTheme.mono(13))
+                .font(RexTheme.monoText(.body))
                 .focused($composeFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -458,6 +477,7 @@ struct SessionScreen: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
+                .accessibilityLabel("Send")
                 .accessibilityIdentifier("sendButton")
             }
             .padding(.horizontal, 12)
@@ -481,6 +501,35 @@ struct SessionScreen: View {
         }
     }
 
+    /// A dropped connection is a state, not an event: it stays on screen with
+    /// the action that fixes it, instead of the dismissible error strip.
+    private func offlineBanner(_ reason: String?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bolt.horizontal.circle")
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Disconnected")
+                    .font(RexTheme.text(.footnote, weight: .semibold))
+                Text(reason ?? "The server stopped responding.")
+                    .font(.caption2)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 4)
+            Button("Reconnect") {
+                Task { await store.connect() }
+            }
+            .font(RexTheme.text(.footnote, weight: .semibold))
+            .foregroundStyle(RexTheme.ink)
+            .padding(.horizontal, 12)
+            .frame(minHeight: RexTheme.tapTarget)
+            .accessibilityIdentifier("reconnectButton")
+        }
+        .foregroundStyle(RexTheme.warning)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .background(RexTheme.strip)
+    }
+
     private func banner(_ message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -489,7 +538,10 @@ struct SessionScreen: View {
             Button {
                 store.errorMessage = nil
             } label: {
-                Image(systemName: "xmark").font(.caption)
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }

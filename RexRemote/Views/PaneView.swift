@@ -104,13 +104,14 @@ struct PaneContent: View {
             Text(">_")
                 .font(RexTheme.mono(12, weight: .bold))
                 .foregroundStyle(isFocused ? RexTheme.mintDeep : RexTheme.secondaryInk.opacity(0.55))
+                .accessibilityHidden(true)
             Text(placement.block.label)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(RexTheme.text(.subheadline, weight: .semibold))
                 .foregroundStyle(isFocused ? RexTheme.ink : RexTheme.secondaryInk)
                 .lineLimit(1)
                 .layoutPriority(1)
             Text(paneLocation)
-                .font(RexTheme.mono(11))
+                .font(RexTheme.monoText(.caption))
                 .foregroundStyle(RexTheme.secondaryInk.opacity(0.8))
                 .lineLimit(1)
                 .layoutPriority(0.5)
@@ -119,21 +120,31 @@ struct PaneContent: View {
                 Task { await store.focus(blockID: placement.block.id) }
             } label: {
                 Image(systemName: "scope")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(.body, weight: .medium))
                     .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 26, height: 30)
+                    .frame(
+                        width: RexTheme.tapTarget,
+                        height: RexTheme.tapTarget
+                    )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Focus pane")
             .accessibilityIdentifier("focusPaneButton")
             Button {
                 store.toggleZoom(blockID: placement.block.id)
             } label: {
                 Image(systemName: isZoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(.body, weight: .medium))
                     .foregroundStyle(RexTheme.secondaryInk)
-                    .frame(width: 26, height: 30)
+                    .frame(
+                        width: RexTheme.tapTarget,
+                        height: RexTheme.tapTarget
+                    )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(isZoomed ? "Restore pane" : "Zoom pane")
             .accessibilityIdentifier("zoomPaneButton")
             PaneMenu(
                 blockID: placement.block.id,
@@ -144,8 +155,8 @@ struct PaneContent: View {
                 onNotice: onNotice
             )
         }
-        .padding(.horizontal, 10)
-        .frame(height: 32)
+        .padding(.leading, 10)
+        .frame(height: RexTheme.tapTarget)
         .background(RexTheme.card)
         .overlay(alignment: .bottom) {
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8)
@@ -162,10 +173,18 @@ struct PaneContent: View {
             HStack(spacing: 6) {
                 Image(systemName: "wifi.exclamationmark")
                 Text(reason).lineLimit(2)
+                Button("Retry") {
+                    controller.restart()
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(RexTheme.ink)
+                .padding(.horizontal, 8)
+                .frame(minHeight: RexTheme.tapTarget)
+                .accessibilityIdentifier("retryPaneButton")
             }
             .font(.caption2)
             .foregroundStyle(RexTheme.warning)
-            .padding(6)
+            .padding(.leading, 10)
             .background(RexTheme.card.opacity(0.92), in: RoundedRectangle(cornerRadius: 6))
             .padding(6)
         case .priming:

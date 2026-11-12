@@ -42,6 +42,15 @@ extension AppStore {
     }
 
     /// A block created outside any layout, then placed next to `anchorID`.
+    /// A block with nothing to anchor to — used by an empty window's call to
+    /// action, where there is no sibling to split.
+    func createBlock() async {
+        _ = await perform("session.new_block", [
+            "flavor": "com.superlogical.terminal.shell",
+            "label": "pane"
+        ])
+    }
+
     func newBlock(beside anchorID: String, direction: String) async {
         guard let created = await perform("session.new_block", [
             "flavor": "com.superlogical.terminal.shell",

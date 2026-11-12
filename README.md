@@ -220,6 +220,23 @@ shell's behaviour, not the app's — vim and less rely on it.
 | ![Pane menu](shots/ghostty-06-pane-menu.png) | ![New window](shots/06-new-window.png) |
 | ![Split from the phone](shots/07-split-right.png) | ![Zoomed pane](shots/09-zoom-input.png) |
 
+## Accessibility
+
+Reviewed against the Apple Human Interface Guidelines:
+
+- **Appearance** — the warm palette exists in light and dark variants and the
+  app follows the system appearance; the terminal defaults switch with it.
+- **Dynamic Type** — chrome text uses semantic text styles, the terminal point
+  size follows the reader's setting (clamped to 9–20pt so the grid stays
+  usable).
+- **Hit targets** — every control is at least 44×44pt, including the pane
+  header glyphs, the key row and the top-bar actions.
+- **VoiceOver** — icon-only buttons carry labels ("Pane actions", "Arrow up",
+  "Control C"), and decorative `>_` marks are hidden from the reader.
+- **States** — a lost connection shows a persistent banner with a Reconnect
+  button, a failed pane stream offers Retry, and an empty window offers to
+  create a pane.
+
 ## Notes and limits
 
 - Control and data sockets are reopened per pane; resume uses the 16-byte reconnect token carried by the data

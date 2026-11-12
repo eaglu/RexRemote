@@ -16,7 +16,7 @@ struct TerminalSurface: UIViewRepresentable {
         view.controller = GhosttyTerminal.TerminalController.shared
         view.configuration = TerminalSurfaceOptions(
             backend: .inMemory(controller.terminal),
-            fontSize: 11,
+            fontSize: RexTheme.terminalFontSize,
             context: .window
         )
         view.delegate = context.coordinator
@@ -60,6 +60,23 @@ struct KeyBar: View {
         var press: TerminalKeyPress?
         /// Literal bytes for keys that type text rather than name a key.
         var bytes: [UInt8] = []
+
+        /// VoiceOver would read "↑" as nothing at all.
+        var accessibilityLabel: String {
+            switch id {
+            case "esc": return "Escape"
+            case "tab": return "Tab"
+            case "ctrl-c": return "Control C"
+            case "ctrl-d": return "Control D"
+            case "ctrl-z": return "Control Z"
+            case "ctrl-l": return "Control L"
+            case "up": return "Arrow up"
+            case "down": return "Arrow down"
+            case "left": return "Arrow left"
+            case "right": return "Arrow right"
+            default: return label
+            }
+        }
     }
 
     private let keys: [Key] = [
@@ -91,14 +108,14 @@ struct KeyBar: View {
                         }
                     } label: {
                         Text(key.label)
-                            .font(RexTheme.mono(13.5, weight: .medium))
-                            .frame(minWidth: 40, minHeight: 38)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
+                            .font(RexTheme.monoText(.callout, weight: .medium))
+                            .frame(minWidth: RexTheme.tapTarget, minHeight: RexTheme.tapTarget)
+                            .padding(.horizontal, 4)
                             .foregroundStyle(RexTheme.ink)
                             .glassEffect(RexTheme.glass(interactive: true), in: .capsule)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(key.accessibilityLabel)
                     .accessibilityIdentifier("key-\(key.id)")
                 }
             }

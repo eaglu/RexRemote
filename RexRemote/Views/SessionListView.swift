@@ -109,7 +109,7 @@ struct SessionListView: View {
                         .font(RexTheme.mono(12, weight: .bold))
                         .foregroundStyle(RexTheme.mintDeep)
                     Text(view.label)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(RexTheme.text(.headline, weight: .semibold))
                         .foregroundStyle(RexTheme.ink)
                     Spacer()
                     Text("\(view.windows.count) windows · \(view.allBlocks.count) panes")

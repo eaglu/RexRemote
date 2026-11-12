@@ -29,12 +29,12 @@ struct QRScannerSheet: View {
     private var titleBar: some View {
         HStack {
             Button("Cancel", action: onCancel)
-                .font(.system(size: 15, weight: .medium))
+                .font(RexTheme.text(.body, weight: .medium))
                 .foregroundStyle(RexTheme.secondaryInk)
                 .accessibilityIdentifier("scanCancelButton")
             Spacer()
             Text("Pair a server")
-                .font(.system(size: 15, weight: .semibold))
+                .font(RexTheme.text(.headline, weight: .semibold))
                 .foregroundStyle(RexTheme.ink)
             Spacer()
             Color.clear.frame(width: 52, height: 1)
@@ -74,7 +74,7 @@ struct QRScannerSheet: View {
                     Spacer()
                     Text("Point at the QR code from\n`rex server tailscale pair`")
                         .multilineTextAlignment(.center)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(RexTheme.text(.subheadline, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
                         .padding(.bottom, 28)
                 }
@@ -85,10 +85,10 @@ struct QRScannerSheet: View {
     private func message(icon: String, title: String, detail: String) -> some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 34))
+                .font(.system(.largeTitle, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.7))
             Text(title)
-                .font(.system(size: 16, weight: .semibold))
+                .font(RexTheme.text(.headline, weight: .semibold))
                 .foregroundStyle(.white)
             Text(detail)
                 .font(.footnote)
@@ -110,7 +110,7 @@ struct QRScannerSheet: View {
 
             HStack(spacing: 8) {
                 Image(systemName: "link")
-                    .font(.system(size: 13))
+                    .font(RexTheme.text(.subheadline))
                     .foregroundStyle(RexTheme.secondaryInk)
                 TextField("rex-abc.tail1234.ts.net", text: $pasted)
                     .font(RexTheme.mono(13))
@@ -119,7 +119,7 @@ struct QRScannerSheet: View {
                     .keyboardType(.URL)
                     .accessibilityIdentifier("pairAddressField")
                 Button("Use") { accept(pasted) }
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(RexTheme.text(.subheadline, weight: .semibold))
                     .foregroundStyle(RexTheme.mintDeep)
                     .accessibilityIdentifier("pairUseButton")
             }

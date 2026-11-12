@@ -121,10 +121,15 @@ struct PaneMenu: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(.body, weight: .medium))
                 .foregroundStyle(RexTheme.secondaryInk)
-                .frame(width: 26, height: 30)
+                .frame(
+                    width: RexTheme.tapTarget,
+                    height: RexTheme.tapTarget
+                )
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel("Pane actions")
         .accessibilityIdentifier("paneMenuButton")
     }
 }

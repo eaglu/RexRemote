@@ -83,6 +83,14 @@ final class TerminalController: NSObject, ObservableObject {
         }
     }
 
+    /// Drop the stream and open a new one, for the pane's Retry button. The pty
+    /// on the server is untouched; only our ticket and socket are replaced.
+    func restart() {
+        stop()
+        phase = .idle
+        start()
+    }
+
     func start() {
         guard startTask == nil else { return }
         startTask = Task { [weak self] in

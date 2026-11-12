@@ -18,7 +18,6 @@ struct RexRemoteApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
-                .preferredColorScheme(.light)
         }
         .onChange(of: scenePhase) { _ in
             guard scenePhase == .active else { return }

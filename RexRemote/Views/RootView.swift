@@ -65,7 +65,10 @@ struct ConnectView: View {
                 } label: {
                     Image(systemName: "list.bullet")
                         .foregroundStyle(RexTheme.ink)
+                        .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
+                        .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Saved servers")
                 .accessibilityIdentifier("hostMenuButton")
             }
         }
@@ -93,14 +96,14 @@ struct ConnectView: View {
                     .font(RexTheme.mono(13, weight: .bold))
                     .foregroundStyle(RexTheme.mintDeep)
                 Text("remote")
-                    .font(RexTheme.mono(13))
+                    .font(RexTheme.monoText(.body))
                     .foregroundStyle(RexTheme.secondaryInk)
             }
             Text("Rex Remote")
-                .font(.system(size: 30, weight: .bold))
+                .font(.system(.largeTitle, weight: .bold))
                 .foregroundStyle(RexTheme.ink)
             Text(host.name)
-                .font(.system(size: 17, weight: .semibold))
+                .font(RexTheme.text(.headline, weight: .semibold))
                 .foregroundStyle(RexTheme.ink)
             Text("A remote control for your Rex sessions.")
                 .font(.footnote)
@@ -114,7 +117,7 @@ struct ConnectView: View {
             field(label: "Server", icon: "server.rack") {
                 HStack(spacing: 6) {
                     TextField("127.0.0.1:7297", text: addressBinding)
-                        .font(RexTheme.mono(13))
+                        .font(RexTheme.monoText(.body))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -124,9 +127,10 @@ struct ConnectView: View {
                         isScanning = true
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(RexTheme.text(.body, weight: .medium))
                             .foregroundStyle(RexTheme.ink)
-                            .padding(.leading, 4)
+                            .frame(width: RexTheme.tapTarget, height: RexTheme.tapTarget)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Scan a pairing code")
@@ -136,7 +140,7 @@ struct ConnectView: View {
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
             field(label: "Token", icon: "key") {
                 SecureField("Optional bearer token", text: tokenBinding)
-                    .font(RexTheme.mono(13))
+                    .font(RexTheme.monoText(.body))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("tokenField")
@@ -150,7 +154,7 @@ struct ConnectView: View {
                     .tint(RexTheme.mintDeep)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Resize shells to fit this device")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(RexTheme.text(.subheadline, weight: .medium))
                         .foregroundStyle(RexTheme.ink)
                     Text("Takes terminal ownership while the app is open.")
                         .font(.caption2)
@@ -170,12 +174,12 @@ struct ConnectView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 13))
+                    .font(RexTheme.text(.subheadline))
                     .foregroundStyle(RexTheme.secondaryInk)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Cloudflare Access")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(RexTheme.text(.subheadline, weight: .medium))
                         .foregroundStyle(RexTheme.ink)
                     Text(draft.usesAccessToken ? "Service token saved" : "For servers behind a tunnel")
                         .font(.caption2)
@@ -183,7 +187,7 @@ struct ConnectView: View {
                 }
                 Spacer(minLength: 0)
                 Image(systemName: showAccess ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(RexTheme.text(.caption, weight: .semibold))
                     .foregroundStyle(RexTheme.secondaryInk)
             }
             .contentShape(Rectangle())
@@ -196,7 +200,7 @@ struct ConnectView: View {
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
             field(label: "Access ID", icon: "person.badge.key") {
                 TextField("Client ID", text: accessIDBinding)
-                    .font(RexTheme.mono(13))
+                    .font(RexTheme.monoText(.body))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("accessIDField")
@@ -204,7 +208,7 @@ struct ConnectView: View {
             Rectangle().fill(RexTheme.hairline).frame(height: 0.8).padding(.leading, 12)
             field(label: "Access secret", icon: "key.horizontal") {
                 SecureField("Client secret", text: accessSecretBinding)
-                    .font(RexTheme.mono(13))
+                    .font(RexTheme.monoText(.body))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("accessSecretField")
@@ -219,7 +223,7 @@ struct ConnectView: View {
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 13))
+                .font(RexTheme.text(.subheadline))
                 .foregroundStyle(RexTheme.secondaryInk)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 3) {
@@ -246,7 +250,7 @@ struct ConnectView: View {
                         .foregroundStyle(RexTheme.mint)
                 }
                 Text(isConnecting ? "Connecting…" : "Connect")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(RexTheme.text(.headline, weight: .semibold))
                     .foregroundStyle(RexTheme.chipInk)
             }
             .frame(maxWidth: .infinity)
@@ -291,10 +295,10 @@ struct ConnectView: View {
             ForEach(store.hosts.hosts) { saved in
                 HStack(spacing: 10) {
                     Image(systemName: saved.id == host.id ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 14))
+                        .font(RexTheme.text(.subheadline))
                         .foregroundStyle(saved.id == host.id ? RexTheme.mintDeep : RexTheme.secondaryInk.opacity(0.6))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(saved.name).font(.system(size: 13, weight: .medium)).foregroundStyle(RexTheme.ink)
+                        Text(saved.name).font(RexTheme.text(.subheadline, weight: .medium)).foregroundStyle(RexTheme.ink)
                         Text(saved.address).font(RexTheme.mono(11)).foregroundStyle(RexTheme.secondaryInk)
                     }
                     Spacer()
