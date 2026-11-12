@@ -122,7 +122,7 @@ struct SessionListView: View {
                     ForEach(view.windows.prefix(4)) { candidate in
                         HStack(spacing: 5) {
                             Text(candidate.label)
-                                .font(.system(size: 11, weight: candidate.id == window.id ? .semibold : .regular))
+                                .font(RexTheme.text(.caption, weight: candidate.id == window.id ? .semibold : .regular))
                             Text("\(candidate.panes.count)")
                                 .font(RexTheme.mono(9))
                         }
